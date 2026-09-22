@@ -60,6 +60,14 @@ def _validate_answers(data: dict, questions: dict) -> dict:
         if choice not in allowed:
             raise JevError(f"TypeSafe JEV 返回结果 {name}.choice={choice!r} 不在允许值中")
         normalized_item = {"type": kind, "choice": choice}
+        confidence = item.get("confidence")
+        if confidence is not None:
+            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.confidence 不是概率")
+            confidence = float(confidence)
+            if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.confidence 超出 0-1")
+            normalized_item["confidence"] = confidence
         probabilities = item.get("probabilities")
         if probabilities is not None:
             if not isinstance(probabilities, dict):

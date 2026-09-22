@@ -42,7 +42,7 @@ _RESULT = {
     "scores": [0.21, 0.66, 0.13],
     "answers": {
         "literal_question": {"type": "noul", "noul": 0.98},
-        "true_intent": {"type": "choice", "choice": "casual_chat"},
+        "true_intent": {"type": "choice", "choice": "casual_chat", "confidence": 0.86},
         "danger_level": {"type": "score", "score": 0},
         "should_reply_now": {"type": "noul", "noul": 0.96},
         "best_action": {"type": "choice", "choice": "make_plan"},

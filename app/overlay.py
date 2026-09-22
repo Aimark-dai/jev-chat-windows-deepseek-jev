@@ -22,6 +22,8 @@ from app.version import VERSION
 _LOG_LINES = 300
 _MUTED = "#68776f"
 _GREEN = "#18794e"
+_AMBER = "#996819"
+_RED = "#b44832"
 _PROJECT_URL = "https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev"
 _CHOICES = {
     "true_intent": {
@@ -48,6 +50,13 @@ _RELATIONSHIPS = [
 
 def _choice(answers, name):
     return _CHOICES[name].get((answers.get(name) or {}).get("choice"), "暂未判断")
+
+
+def _finite_number(value, lowest=0.0, highest=1.0):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if isfinite(value) and lowest <= value <= highest else None
 
 
 def _label(text="", size=14, color=None, bold=False, parent=None):
@@ -402,7 +411,7 @@ class Overlay:
         insight_box.setContentsMargins(14, 12, 14, 12)
         insight_box.setSpacing(7)
         row = QHBoxLayout()
-        self.insightTitle = _label("对话参考", 12, _MUTED)
+        self.insightTitle = _label("JEV 判断", 12, _MUTED)
         row.addWidget(self.insightTitle, 1)
         self.tension = _label("", 11)
         self.tension.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -410,9 +419,13 @@ class Overlay:
         insight_box.addLayout(row)
         self.summary = _label("", 14, "#304c3c", True)
         insight_box.addWidget(self.summary)
+        self.intentConfidence = _label("", 11, _MUTED)
+        insight_box.addWidget(self.intentConfidence)
         self.intent = _label("", 12, _MUTED)
         insight_box.addWidget(self.intent)
-        self.insight.setToolTip("根据当前聊天片段推测，可能理解有偏差。紧张度为 0–9 的参考评分。")
+        self.resolution = _label("", 11, _GREEN)
+        insight_box.addWidget(self.resolution)
+        self.insight.setToolTip("JEV 根据当前聊天片段判断；危险度和把握度仅供回复前参考。")
         self.insight.hide()
         body.addWidget(self.insight)
 
@@ -1037,17 +1050,34 @@ class Overlay:
             self.replyBox.addWidget(card)
             self.cards.append(card)
         reply_to = result.get("reply_to")
-        self.insightTitle.setText(f"对话参考 · 回复给 {reply_to}" if reply_to else "对话参考")
+        self.insightTitle.setText(f"JEV 判断 · 回复给 {reply_to}" if reply_to else "JEV 判断")
         answers = result.get("answers") or {}
-        self.summary.setText("建议：" + _choice(answers, "best_action"))
-        self.intent.setText("可能意图 · " + _choice(answers, "true_intent") +
-                            "\n可能需要 · " + _choice(answers, "she_needs"))
-        score = (answers.get("danger_level") or {}).get("score")
-        valid_score = isinstance(score, (int, float)) and isfinite(score) and 0 <= score <= 9
-        self.tension.setText(f"紧张度 {score:.0f}/9" if valid_score else "紧张度待判断")
-        color = "#996819" if valid_score and score >= 3 else _MUTED
-        if valid_score and score >= 6:
-            color = "#b44832"
+        true_intent = answers.get("true_intent") or {}
+        self.summary.setText("真实意图：" + _choice(answers, "true_intent"))
+        confidence = _finite_number(true_intent.get("confidence"))
+        self.intentConfidence.setText(f"把握 {confidence * 100:.0f}%" if confidence is not None else "")
+        self.intentConfidence.setVisible(confidence is not None)
+        details = [
+            "需要：" + _choice(answers, "she_needs"),
+            "行动：" + _choice(answers, "best_action"),
+        ]
+        reply_probability = _finite_number((answers.get("should_reply_now") or {}).get("noul"))
+        if reply_probability is not None:
+            details.append("可给实质" if reply_probability >= 0.5 else "先别给实质")
+        self.intent.setText(" · ".join(details))
+        resolved_probability = _finite_number((answers.get("tension_resolved") or {}).get("noul"))
+        resolved = resolved_probability is not None and resolved_probability >= 0.7
+        self.resolution.setText("✓ 紧张已缓解" if resolved else "")
+        self.resolution.setVisible(resolved)
+        score = _finite_number((answers.get("danger_level") or {}).get("score"), highest=9)
+        if score is not None:
+            danger_word = "很危险" if score >= 8 else "偏危险" if score >= 6 else "留神" if score >= 3 else "安全"
+            self.tension.setText(f"危险 {score:.0f}/9 · {danger_word}")
+        else:
+            self.tension.setText("危险度待判断")
+        color = _AMBER if score is not None and score >= 3 else _GREEN if score is not None else _MUTED
+        if score is not None and score >= 6:
+            color = _RED
         qss = f"BodyLabel {{ color: {color}; background: transparent; }}"
         setCustomStyleSheet(self.tension, qss, qss)
         self.empty.setVisible(not self.cands)

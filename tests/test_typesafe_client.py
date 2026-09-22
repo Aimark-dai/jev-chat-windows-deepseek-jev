@@ -59,6 +59,7 @@ class TypeSafeClientTests(unittest.TestCase):
         self.assertEqual(captured["auth"], "Bearer typesafe-test-key")
         self.assertEqual(captured["timeout"], 7)
         self.assertEqual(result["answers"]["best_reply"]["choice"], "reply_b")
+        self.assertEqual(result["answers"]["best_reply"]["confidence"], 0.9)
 
     def test_ask_rejects_choice_outside_question_criteria(self):
         questions = {
@@ -98,6 +99,25 @@ class TypeSafeClientTests(unittest.TestCase):
                 result = typesafe_client.ask({"messages": []}, questions)
 
         self.assertEqual(result["answers"]["literal_question"]["noul"], 0.65)
+
+    def test_ask_rejects_invalid_choice_confidence(self):
+        questions = {
+            "true_intent": {
+                "type": "choice",
+                "criteria": {"casual_chat": "chat", "request_action": "action"},
+            }
+        }
+        response = {
+            "answers": {
+                "true_intent": {
+                    "type": "choice", "choice": "casual_chat", "confidence": 1.2,
+                }
+            }
+        }
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
+            with patch("urllib.request.urlopen", return_value=_Response(response)):
+                with self.assertRaisesRegex(typesafe_client.JevError, "confidence 超出 0-1"):
+                    typesafe_client.ask({"messages": []}, questions)
 
 
 if __name__ == "__main__":
