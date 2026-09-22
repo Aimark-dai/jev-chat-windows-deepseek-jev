@@ -8,15 +8,28 @@ from __future__ import annotations
 try:
     from .draft import draft_candidates
     from .jev_client import ask as deepseek_ask
-    from .questions import JUDGE_QUESTIONS, build_rank_question, build_state
+    from .questions import JUDGE_QUESTIONS, build_rank_question, build_review_questions, build_state
     from .typesafe_client import ask as typesafe_ask
 except ImportError:
     from draft import draft_candidates
     from jev_client import ask as deepseek_ask
-    from questions import JUDGE_QUESTIONS, build_rank_question, build_state
+    from questions import JUDGE_QUESTIONS, build_rank_question, build_review_questions, build_state
     from typesafe_client import ask as typesafe_ask
 
 _REPLY_IDX = {"reply_a": 0, "reply_b": 1, "reply_c": 2}
+
+
+def _quality_passed(answers: dict) -> bool:
+    return (answers.get("candidate_quality") or {}).get("choice") == "pass"
+
+
+def _sum_usage(results: list[dict]) -> dict:
+    usage = {"typesafe_calls": len(results)}
+    for result in results:
+        for key, value in (result.get("usage") or {}).items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                usage[key] = usage.get(key, 0) + value
+    return usage
 
 
 def analyze(messages: list, relationship: str, model: str | None = None,
@@ -37,18 +50,59 @@ def analyze(messages: list, relationship: str, model: str | None = None,
     scores 是每条候选的胜出概率（0~1），取自 best_reply.probabilities，取不到记 0.0。
     只有对方最新说话时才有意义调它——是不是该触发由调用方判断（看 latest_from）。
     """
-    candidates = draft_candidates(messages, relationship, provider=provider,
-                                  model=model, timeout=timeout, keep=context, reply_to=reply_to,
-                                  style=style, thinking=thinking)
+    state = build_state(messages, relationship, keep=context, reply_to=reply_to)
+    regenerated = False
+    quality_passed = True
 
-    questions = dict(JUDGE_QUESTIONS)
-    if len(candidates) >= 2:  # 起草只给了 1 条就没什么可排的，判断题照问
-        questions.update(build_rank_question(candidates))
-    judge = typesafe_ask if judge_provider == "typesafe" else deepseek_ask
-    result = judge(build_state(messages, relationship, keep=context, reply_to=reply_to),
-                   questions, timeout=timeout)
-
-    answers = result.get("answers") or {}
+    if judge_provider == "typesafe":
+        calls = []
+        pre_result = typesafe_ask(state, JUDGE_QUESTIONS, timeout=timeout)
+        calls.append(pre_result)
+        pre_answers = pre_result.get("answers") or {}
+        candidates = draft_candidates(
+            messages, relationship, provider=provider, model=model, timeout=timeout,
+            keep=context, reply_to=reply_to, style=style, thinking=thinking,
+            jev_analysis=pre_answers,
+        )
+        if not candidates:
+            raise ValueError("DeepSeek 未生成可用候选")
+        review_result = typesafe_ask(
+            state, build_review_questions(candidates), timeout=timeout
+        )
+        calls.append(review_result)
+        review_answers = review_result.get("answers") or {}
+        if not _quality_passed(review_answers):
+            rejected_candidates = candidates
+            candidates = draft_candidates(
+                messages, relationship, provider=provider, model=model, timeout=timeout,
+                keep=context, reply_to=reply_to, style=style, thinking=thinking,
+                jev_analysis=pre_answers, revision_feedback=review_answers,
+                rejected_candidates=rejected_candidates,
+            )
+            if not candidates:
+                raise ValueError("DeepSeek 重写后仍未生成可用候选")
+            regenerated = True
+            review_result = typesafe_ask(
+                state, build_review_questions(candidates), timeout=timeout
+            )
+            calls.append(review_result)
+            review_answers = review_result.get("answers") or {}
+        quality_passed = _quality_passed(review_answers)
+        answers = {**pre_answers, **review_answers}
+        usage = _sum_usage(calls)
+    else:
+        candidates = draft_candidates(
+            messages, relationship, provider=provider, model=model, timeout=timeout,
+            keep=context, reply_to=reply_to, style=style, thinking=thinking,
+        )
+        if not candidates:
+            raise ValueError("DeepSeek 未生成可用候选")
+        questions = dict(JUDGE_QUESTIONS)
+        if len(candidates) >= 2:
+            questions.update(build_rank_question(candidates))
+        result = deepseek_ask(state, questions, timeout=timeout)
+        answers = result.get("answers") or {}
+        usage = result.get("usage") or {}
     best_key = (answers.get("best_reply") or {}).get("choice")
     best_index = _REPLY_IDX.get(best_key, 0)  # 解析不出就退第一条
     if best_index >= len(candidates):
@@ -68,7 +122,9 @@ def analyze(messages: list, relationship: str, model: str | None = None,
         "best_reply": candidates[best_index],
         "scores": scores,
         "answers": answers,
-        "usage": result.get("usage") or {},
+        "usage": usage,
         "reply_to": reply_to,
         "judge_provider": "typesafe" if judge_provider == "typesafe" else "deepseek",
+        "quality_passed": quality_passed,
+        "regenerated": regenerated,
     }

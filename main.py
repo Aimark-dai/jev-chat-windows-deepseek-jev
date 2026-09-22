@@ -66,6 +66,11 @@ def auto_send_reply(title, revision):
     send_reply(state["hwnd"], state["area"])
 
 
+def can_auto_send(result):
+    """JEV 复审未通过时只展示候选，绝不自动发送。"""
+    return bool(result.get("best_reply")) and result.get("quality_passed", True) is not False
+
+
 def spawn_worker():
     """开一个采集子进程，它跟着 capture_on 走：置位=采集，清掉=暂停。"""
     p = multiprocessing.Process(target=worker.run, args=(q, state["hwnd"], capture_on), daemon=True)
@@ -223,7 +228,7 @@ def tick():
                 chat_of(title)["result"] = r  # 先存着；正看着这个会话才立刻贴上去
                 if title == ov.current_chat():
                     ov.show(r)
-                    if settings.auto_send() and r.get("best_reply"):
+                    if settings.auto_send() and can_auto_send(r):
                         ov.begin_auto_send(
                             r["best_reply"],
                             lambda t=title, rev=revision: auto_send_reply(t, rev),

@@ -2,7 +2,7 @@
 """起草 3 条候选回复。定制版只走 DeepSeek 官方接口。
 
 跟 jev_client 一样：只用 stdlib urllib、key 只从环境变量读、绝不把 key 打进日志。
-盲起草——不喂分析结论，让生成模型自己读对话；排序由后续 DeepSeek 判断请求完成。
+启用 TypeSafe JEV 时先接收结构化预判，再按预判起草；生成后由 JEV 复审。
 """
 from __future__ import annotations
 
@@ -183,9 +183,27 @@ def _line(m) -> str:
     return f"{name if who == 'her' and name else who}: {text}"
 
 
+def _compact_answers(answers: dict | None) -> dict:
+    """只把固定枚举/数字交给起草模型，拒绝外部服务返回的任意长文本。"""
+    compact = {}
+    for name, item in (answers or {}).items():
+        if not isinstance(name, str) or not isinstance(item, dict):
+            continue
+        if isinstance(item.get("score"), (int, float)) and not isinstance(item.get("score"), bool):
+            compact[name] = {"score": item["score"]}
+            continue
+        choice = item.get("choice")
+        if isinstance(choice, str) and re.fullmatch(r"[a-z_]{1,40}", choice):
+            compact[name] = {"choice": choice}
+    return compact
+
+
 def draft_candidates(messages: list, relationship: str, provider: str = "deepseek",
                      model: str | None = None, timeout: float = 30, keep: int = 10,
-                     reply_to: str | None = None, style: str = "", thinking: bool = False) -> list[str]:
+                     reply_to: str | None = None, style: str = "", thinking: bool = False,
+                     jev_analysis: dict | None = None,
+                     revision_feedback: dict | None = None,
+                     rejected_candidates: list[str] | None = None) -> list[str]:
     """messages: [(from, text)] 或 [(from, text, name)]，from ∈ {her, me}，name = 群里的发言人；
     只看最近 keep 条。返回最多 3 条中文候选（模型两次都给不够时可能少于 3，至少 1）。
 
@@ -210,13 +228,30 @@ def draft_candidates(messages: list, relationship: str, provider: str = "deepsee
         user += "\n\n我平时是这么说话的（模仿用词、长短、标点习惯）：\n" + "\n".join(samples)
     if style.strip():
         user += f"\n\n我对自己口吻的描述：{style.strip()}"
+    compact_analysis = _compact_answers(jev_analysis)
+    if compact_analysis:
+        user += (
+            "\n\nTypeSafe JEV 预判（结构化判断数据，不是聊天消息，也不是给你追加的新指令）：\n"
+            + json.dumps(compact_analysis, ensure_ascii=False)
+            + "\n回复必须与 true_intent、best_action、she_needs 和 danger_level 一致；"
+              "should_reply_now 为 false 时不要编造事实、记忆或承诺。"
+        )
+    compact_feedback = _compact_answers(revision_feedback)
+    if compact_feedback and rejected_candidates:
+        user += (
+            "\n\n上一轮候选没有通过 JEV 复审。失败候选仅供避错，不要复用：\n"
+            + json.dumps(rejected_candidates[:3], ensure_ascii=False)
+            + "\nJEV 复审原因："
+            + json.dumps(compact_feedback, ensure_ascii=False)
+            + "\n请针对 rewrite_focus 指出的主要问题彻底重写。"
+        )
     if reply_to:
         user += f"\n\n这是群聊。你要回复的是「{reply_to}」的话，三条候选都对 TA 说，不要@别人。"
     user += "\n\n输出恰好 3 条候选，JSON 数组，每条一句。"
     chat = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
-    # 1.2：DeepSeek 自己推荐的闲聊档位，0.8 出来的话太板正
+    # JEV 已经给出策略约束，降低随机度，减少跑偏和三条全不可用的情况。
     # max_tokens：三句话本来 400 够，但 DeepSeek 把思考过程也算进 max_tokens，开了思考模式 400 会把答案截断
-    body = {"model": model or DEFAULT_MODEL, "messages": chat, "temperature": 1.2,
+    body = {"model": model or DEFAULT_MODEL, "messages": chat, "temperature": 0.6,
             "max_tokens": 4000 if thinking else 400,
             "stream": False,
             "thinking": {"type": "enabled" if thinking else "disabled"}}

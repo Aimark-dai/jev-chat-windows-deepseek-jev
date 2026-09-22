@@ -1044,8 +1044,10 @@ class Overlay:
         self.insight.setVisible(bool(self.cands))
         self.referenceNote.setVisible(bool(self.cands) and not self._compact)
         self.updated.setText(datetime.now().strftime("%H:%M") + " 更新")
-        if self.cands:
+        if self.cands and result.get("quality_passed", True):
             self.set_status("建议已更新，选一句适合你的回复", "success")
+        elif self.cands:
+            self.set_status("JEV 复审仍未通过，请人工确认后再使用；已禁止自动发送。", "warning")
         else:
             self.set_status("未生成可用回复，请等待下一条新消息。", "error")
 

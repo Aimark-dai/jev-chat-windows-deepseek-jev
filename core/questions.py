@@ -255,3 +255,47 @@ def build_rank_question(candidates: list[str]) -> dict:
             "criteria": {key: text for key, text in zip(keys, candidates)},
         }
     }
+
+
+def build_review_questions(candidates: list[str]) -> dict:
+    """Build the post-generation JEV quality gate and optional ranking question."""
+    if not 1 <= len(candidates) <= 3:
+        raise ValueError("build_review_questions expects 1 to 3 candidate replies")
+    questions = {
+        "candidate_quality": {
+            "type": "choice",
+            "instructions": (
+                "Is at least one candidate safe and genuinely usable as the next message? "
+                "Judge against the conversation, relationship, true intent, best action, and known facts. "
+                "Choose regenerate when every candidate misses the intent, invents facts, sounds robotic, "
+                "addresses the wrong person, over-promises, or could worsen the situation."
+            ),
+            "criteria": {
+                "pass": (
+                    "At least one candidate directly fits the situation, uses only supported facts, "
+                    "sounds like a natural chat message, and is safe to send after human confirmation."
+                ),
+                "regenerate": (
+                    "None of the candidates is usable without a meaningful rewrite."
+                ),
+            },
+        },
+        "rewrite_focus": {
+            "type": "choice",
+            "instructions": (
+                "Choose the main reason a rewrite is needed. Choose good when candidate_quality is pass."
+            ),
+            "criteria": {
+                "good": "At least one candidate is already usable.",
+                "wrong_intent": "The replies respond to the wrong underlying intent or action.",
+                "tone_mismatch": "The replies use the wrong tone for this relationship or conversation.",
+                "factual_invention": "The replies invent memory, facts, timing, promises, or commitments.",
+                "generic_or_robotic": "The replies sound templated, verbose, vague, or unlike a real chat.",
+                "unsafe_or_overpromise": "The replies make unsafe promises or may escalate the situation.",
+                "wrong_target": "The replies address the wrong person or ignore the selected reply target.",
+            },
+        },
+    }
+    if len(candidates) >= 2:
+        questions.update(build_rank_question(candidates))
+    return questions

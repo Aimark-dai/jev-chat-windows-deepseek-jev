@@ -19,6 +19,12 @@ class _FakeUser32:
 
 
 class AutoSendTests(unittest.TestCase):
+    def test_auto_send_requires_jev_quality_gate_to_pass(self):
+        self.assertTrue(main.can_auto_send({"best_reply": "可以", "quality_passed": True}))
+        self.assertTrue(main.can_auto_send({"best_reply": "兼容旧结果"}))
+        self.assertFalse(main.can_auto_send({"best_reply": "不合格", "quality_passed": False}))
+        self.assertFalse(main.can_auto_send({"best_reply": ""}))
+
     def test_auto_fill_replaces_existing_draft(self):
         fake = _FakeUser32(foreground=123)
         with patch.object(fill_module, "u32", fake):
