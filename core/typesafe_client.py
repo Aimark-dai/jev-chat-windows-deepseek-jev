@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import socket
 import time
@@ -18,6 +19,62 @@ except ImportError:
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
 MAX_RETRIES = 3
+
+
+def _validate_answers(data: dict, questions: dict) -> dict:
+    answers = data.get("answers") if isinstance(data, dict) else None
+    if not isinstance(answers, dict):
+        raise JevError("TypeSafe JEV 返回结果缺少 answers 对象")
+
+    normalized = {}
+    for name, spec in questions.items():
+        item = answers.get(name)
+        if not isinstance(item, dict):
+            raise JevError(f"TypeSafe JEV 返回结果缺少 {name}")
+        kind = spec.get("type")
+        if kind == "score":
+            score = item.get("score")
+            if isinstance(score, bool) or not isinstance(score, (int, float)):
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.score 不是数字")
+            highest = max(0, len(spec.get("criteria") or []) - 1)
+            if not math.isfinite(float(score)) or not 0 <= float(score) <= highest:
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.score 超出 0-{highest}")
+            normalized[name] = {"type": "score", "score": float(score)}
+            continue
+
+        if kind == "noul":
+            probability = item.get("noul")
+            if isinstance(probability, bool) or not isinstance(probability, (int, float)):
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.noul 不是概率")
+            probability = float(probability)
+            if not math.isfinite(probability) or not 0 <= probability <= 1:
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.noul 超出 0-1")
+            normalized[name] = {"type": "noul", "noul": probability}
+            continue
+
+        choice = item.get("choice")
+        if isinstance(choice, bool):
+            choice = "true" if choice else "false"
+        choice = str(choice or "").strip()
+        allowed = tuple((spec.get("criteria") or {}).keys())
+        if choice not in allowed:
+            raise JevError(f"TypeSafe JEV 返回结果 {name}.choice={choice!r} 不在允许值中")
+        normalized_item = {"type": kind, "choice": choice}
+        probabilities = item.get("probabilities")
+        if probabilities is not None:
+            if not isinstance(probabilities, dict):
+                raise JevError(f"TypeSafe JEV 返回结果 {name}.probabilities 不是对象")
+            clean_probabilities = {}
+            for key, value in probabilities.items():
+                if key not in allowed or isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise JevError(f"TypeSafe JEV 返回结果 {name}.probabilities 无效")
+                value = float(value)
+                if not math.isfinite(value) or not 0 <= value <= 1:
+                    raise JevError(f"TypeSafe JEV 返回结果 {name}.probabilities 超出 0-1")
+                clean_probabilities[key] = value
+            normalized_item["probabilities"] = clean_probabilities
+        normalized[name] = normalized_item
+    return normalized
 
 
 def _api_key() -> str:
@@ -57,9 +114,7 @@ def ask(state: dict, questions: dict, timeout: float = 20) -> dict:
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-            if not isinstance(result.get("answers"), dict):
-                raise JevError("TypeSafe JEV 返回结果缺少 answers 对象")
-            return result
+            return {**result, "answers": _validate_answers(result, questions)}
         except urllib.error.HTTPError as exc:
             detail = _error_body(exc)
             if exc.code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:

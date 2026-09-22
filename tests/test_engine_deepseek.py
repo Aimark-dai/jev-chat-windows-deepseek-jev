@@ -64,6 +64,15 @@ class DeepSeekEngineTests(unittest.TestCase):
 
         self.assertEqual(ask.call_count, 2)
         self.assertEqual(draft.call_args.kwargs["jev_analysis"], pre_judged["answers"])
+        review_state = ask.call_args_list[1].args[0]
+        self.assertEqual(
+            review_state["candidate_replies"],
+            [
+                {"id": "reply_a", "text": "甲"},
+                {"id": "reply_b", "text": "乙"},
+                {"id": "reply_c", "text": "丙"},
+            ],
+        )
         self.assertEqual(result["best_reply"], "丙")
         self.assertEqual(result["scores"], [0.1, 0.2, 0.7])
         self.assertEqual(result["judge_provider"], "typesafe")

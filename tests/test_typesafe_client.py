@@ -60,6 +60,45 @@ class TypeSafeClientTests(unittest.TestCase):
         self.assertEqual(captured["timeout"], 7)
         self.assertEqual(result["answers"]["best_reply"]["choice"], "reply_b")
 
+    def test_ask_rejects_choice_outside_question_criteria(self):
+        questions = {
+            "candidate_quality": {
+                "type": "choice",
+                "criteria": {"pass": "usable", "regenerate": "rewrite"},
+            }
+        }
+        response = {"answers": {"candidate_quality": {"choice": "send_anyway"}}}
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
+            with patch("urllib.request.urlopen", return_value=_Response(response)):
+                with self.assertRaisesRegex(typesafe_client.JevError, "不在允许值"):
+                    typesafe_client.ask({"messages": []}, questions)
+
+    def test_ask_rejects_missing_required_answer(self):
+        questions = {
+            "candidate_quality": {
+                "type": "choice",
+                "criteria": {"pass": "usable", "regenerate": "rewrite"},
+            }
+        }
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
+            with patch("urllib.request.urlopen", return_value=_Response({"answers": {}})):
+                with self.assertRaisesRegex(typesafe_client.JevError, "缺少 candidate_quality"):
+                    typesafe_client.ask({"messages": []}, questions)
+
+    def test_ask_accepts_typesafe_noul_probability(self):
+        questions = {
+            "literal_question": {
+                "type": "noul",
+                "criteria": {"true": "literal", "false": "subtext"},
+            }
+        }
+        response = {"answers": {"literal_question": {"type": "noul", "noul": 0.65}}}
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
+            with patch("urllib.request.urlopen", return_value=_Response(response)):
+                result = typesafe_client.ask({"messages": []}, questions)
+
+        self.assertEqual(result["answers"]["literal_question"]["noul"], 0.65)
+
 
 if __name__ == "__main__":
     unittest.main()

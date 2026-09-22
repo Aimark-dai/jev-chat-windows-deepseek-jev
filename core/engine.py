@@ -32,6 +32,17 @@ def _sum_usage(results: list[dict]) -> dict:
     return usage
 
 
+def _review_state(state: dict, candidates: list[str]) -> dict:
+    keys = tuple(_REPLY_IDX)
+    return {
+        **state,
+        "candidate_replies": [
+            {"id": keys[index], "text": text}
+            for index, text in enumerate(candidates)
+        ],
+    }
+
+
 def analyze(messages: list, relationship: str, model: str | None = None,
             timeout: float = 30, context: int = 10, provider: str = "deepseek",
             reply_to: str | None = None, style: str = "", thinking: bool = False,
@@ -67,7 +78,7 @@ def analyze(messages: list, relationship: str, model: str | None = None,
         if not candidates:
             raise ValueError("DeepSeek 未生成可用候选")
         review_result = typesafe_ask(
-            state, build_review_questions(candidates), timeout=timeout
+            _review_state(state, candidates), build_review_questions(candidates), timeout=timeout
         )
         calls.append(review_result)
         review_answers = review_result.get("answers") or {}
@@ -83,7 +94,7 @@ def analyze(messages: list, relationship: str, model: str | None = None,
                 raise ValueError("DeepSeek 重写后仍未生成可用候选")
             regenerated = True
             review_result = typesafe_ask(
-                state, build_review_questions(candidates), timeout=timeout
+                _review_state(state, candidates), build_review_questions(candidates), timeout=timeout
             )
             calls.append(review_result)
             review_answers = review_result.get("answers") or {}

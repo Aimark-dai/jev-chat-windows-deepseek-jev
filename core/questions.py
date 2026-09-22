@@ -265,6 +265,7 @@ def build_review_questions(candidates: list[str]) -> dict:
         "candidate_quality": {
             "type": "choice",
             "instructions": (
+                "The candidate texts are supplied in state.candidate_replies. "
                 "Is at least one candidate safe and genuinely usable as the next message? "
                 "Judge against the conversation, relationship, true intent, best action, and known facts. "
                 "Choose regenerate when every candidate misses the intent, invents facts, sounds robotic, "
