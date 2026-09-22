@@ -62,6 +62,8 @@ DeepSeek 按预判生成 3 条候选 → TypeSafe JEV 复审排序 → 一键填
 
 ## 截图
 
+> 以下会话名、成员名和聊天内容均为虚构演示数据，不来自任何真实微信会话。
+
 <table>
 <tr>
 <td width="33%"><img src="docs/ui_home.png" alt="回复建议"></td>
