@@ -29,6 +29,9 @@ jobs:
       - name: 装依赖
         run: pip install -r requirements.txt pyinstaller
 
+      - name: 运行测试
+        run: python -m unittest discover -s tests -v
+
       - name: 打包
         run: pyinstaller --noconfirm --clean jev.spec
 
@@ -41,7 +44,11 @@ jobs:
           $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:GITHUB_SHA.Substring(0, 7) }
           $zip = "jev-chat-windows-$ver.zip"
           Compress-Archive -Path 'dist\jev-chat-windows' -DestinationPath $zip
+          $sha = "$zip.sha256"
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $sha -Value "$hash  $zip" -Encoding ascii
           Add-Content -Path $env:GITHUB_OUTPUT -Value "zip=$zip"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$sha"
           "{0}  {1:N1} MB" -f $zip, ((Get-Item $zip).Length / 1MB)
 
       - name: 上传构建产物
@@ -49,12 +56,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jev-chat-windows
-          path: '*.zip'
+          path: |
+            *.zip
+            *.sha256
           if-no-files-found: warn
 
       - name: 发 Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.pack.outputs.zip }}
+          files: |
+            ${{ steps.pack.outputs.zip }}
+            ${{ steps.pack.outputs.sha }}
           generate_release_notes: true
