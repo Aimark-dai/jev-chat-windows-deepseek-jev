@@ -39,7 +39,36 @@ def _validate_answers(data: dict, questions: dict) -> dict:
             highest = max(0, len(spec.get("criteria") or []) - 1)
             if not math.isfinite(float(score)) or not 0 <= float(score) <= highest:
                 raise JevError(f"TypeSafe JEV 返回结果 {name}.score 超出 0-{highest}")
-            normalized[name] = {"type": "score", "score": float(score)}
+            normalized_item = {"type": "score", "score": float(score)}
+            confidence = item.get("confidence")
+            if confidence is not None:
+                if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+                    raise JevError(f"TypeSafe JEV 返回结果 {name}.confidence 不是概率")
+                confidence = float(confidence)
+                if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                    raise JevError(f"TypeSafe JEV 返回结果 {name}.confidence 超出 0-1")
+                normalized_item["confidence"] = confidence
+            levels = {str(index) for index in range(highest + 1)}
+            legend = item.get("legend")
+            if legend is not None:
+                if not isinstance(legend, dict) or any(str(key) not in levels for key in legend):
+                    raise JevError(f"TypeSafe JEV 返回结果 {name}.legend 无效")
+                normalized_item["legend"] = {str(key): value for key, value in legend.items()}
+            probabilities = item.get("probabilities")
+            if probabilities is not None:
+                if not isinstance(probabilities, dict):
+                    raise JevError(f"TypeSafe JEV 返回结果 {name}.probabilities 不是对象")
+                clean_probabilities = {}
+                for key, value in probabilities.items():
+                    key = str(key)
+                    if key not in levels or isinstance(value, bool) or not isinstance(value, (int, float)):
+                        raise JevError(f"TypeSafe JEV 返回结果 {name}.probabilities 无效")
+                    value = float(value)
+                    if not math.isfinite(value) or not 0 <= value <= 1:
+                        raise JevError(f"TypeSafe JEV 返回结果 {name}.probabilities 超出 0-1")
+                    clean_probabilities[key] = value
+                normalized_item["probabilities"] = clean_probabilities
+            normalized[name] = normalized_item
             continue
 
         if kind == "noul":

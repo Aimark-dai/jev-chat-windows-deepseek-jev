@@ -100,6 +100,33 @@ class TypeSafeClientTests(unittest.TestCase):
 
         self.assertEqual(result["answers"]["literal_question"]["noul"], 0.65)
 
+    def test_ask_preserves_official_score_fields(self):
+        questions = {
+            "danger_level": {
+                "type": "score",
+                "criteria": ["safe", "watch", "danger"],
+            }
+        }
+        response = {
+            "answers": {
+                "danger_level": {
+                    "type": "score",
+                    "score": 1.4,
+                    "confidence": 0.72,
+                    "legend": {"0": "safe", "1": "watch", "2": "danger"},
+                    "probabilities": {"0": 0.1, "1": 0.4, "2": 0.5},
+                }
+            }
+        }
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
+            with patch("urllib.request.urlopen", return_value=_Response(response)):
+                result = typesafe_client.ask({"messages": []}, questions)
+
+        self.assertEqual(
+            result["answers"]["danger_level"],
+            response["answers"]["danger_level"],
+        )
+
     def test_ask_rejects_invalid_choice_confidence(self):
         questions = {
             "true_intent": {

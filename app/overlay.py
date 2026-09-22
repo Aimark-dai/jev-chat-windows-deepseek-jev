@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """浅色置顶回复助手：回复建议和独立设置页。发送始终由用户在微信确认。"""
 from datetime import datetime
-from math import isfinite
-
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
@@ -17,6 +15,10 @@ from qfluentwidgets import (
 )
 
 from app import settings
+from app.jev_display import (
+    choice_distribution, choice_summary, danger_summary, finite_number,
+    probability_summary,
+)
 from app.version import VERSION
 
 _LOG_LINES = 300
@@ -25,38 +27,10 @@ _GREEN = "#18794e"
 _AMBER = "#996819"
 _RED = "#b44832"
 _PROJECT_URL = "https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev"
-_CHOICES = {
-    "true_intent": {
-        "confirm_you_care": "希望确认你在意", "vent_anger": "表达不满或受伤",
-        "request_action": "希望你采取行动", "seek_explanation": "希望了解原因",
-        "casual_chat": "轻松交流", "close_topic": "平和结束话题",
-    },
-    "best_action": {
-        "check_history": "先核对聊天记录", "apologize": "为已知问题道歉",
-        "give_commitment": "给出具体承诺", "explain": "说明事实与原因",
-        "acknowledge": "回应并表达理解", "say_less": "简短回应或留白",
-        "make_plan": "商量具体安排",
-    },
-    "she_needs": {
-        "apology": "真诚道歉", "action": "具体行动或安排", "explanation": "清楚的解释",
-        "care": "关注与在意", "nothing": "可能无需补充回应",
-    },
-}
 _RELATIONSHIPS = [
     ("恋人", "romantic partners"), ("朋友", "friends"), ("同事", "colleagues"),
     ("家人", "family"), ("自定义", None),
 ]
-
-
-def _choice(answers, name):
-    return _CHOICES[name].get((answers.get(name) or {}).get("choice"), "暂未判断")
-
-
-def _finite_number(value, lowest=0.0, highest=1.0):
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    value = float(value)
-    return value if isfinite(value) and lowest <= value <= highest else None
 
 
 def _label(text="", size=14, color=None, bold=False, parent=None):
@@ -423,7 +397,7 @@ class Overlay:
         insight_box.addWidget(self.intentConfidence)
         self.intent = _label("", 12, _MUTED)
         insight_box.addWidget(self.intent)
-        self.resolution = _label("", 11, _GREEN)
+        self.resolution = _label("", 11, _MUTED)
         insight_box.addWidget(self.resolution)
         self.insight.setToolTip("JEV 根据当前聊天片段判断；危险度和把握度仅供回复前参考。")
         self.insight.hide()
@@ -506,7 +480,10 @@ class Overlay:
         self.styleEdit.setAccessibleName("说话风格")
         style_label.setBuddy(self.styleEdit)
         box.addWidget(self.styleEdit)
-        box.addWidget(self._hint("候选本来就照着你最近发的消息模仿；这里可以再补一句你自己的口吻。"))
+        box.addWidget(self._hint(
+            "同一会话中收集到你自己最近 6–12 条有效短消息后，候选会模仿用词、句长和标点；"
+            "这里只是本次运行的上下文学习，不会训练模型，重启后重新收集。这里还可以补一句固定口吻。"
+        ))
         context_label = _label("参考上下文", 13)
         box.addWidget(context_label)
         self.contextBox = SpinBox()
@@ -515,7 +492,7 @@ class Overlay:
         context_label.setBuddy(self.contextBox)
         box.addWidget(self.contextBox)
         box.addWidget(self._hint(
-            "生成和判断时看最近这么多条消息。太少会丢上下文，太多会稀释重点，建议 6–12。"
+            "这是理解当前对话用的消息数量，不是风格样本数量。太少会丢上下文，太多会稀释重点，建议 6–12。"
         ))
         target_row = QHBoxLayout()
         target_row.addWidget(_label("群聊指定回复对象", 13), 1)
@@ -1053,28 +1030,21 @@ class Overlay:
         self.insightTitle.setText(f"JEV 判断 · 回复给 {reply_to}" if reply_to else "JEV 判断")
         answers = result.get("answers") or {}
         true_intent = answers.get("true_intent") or {}
-        self.summary.setText("真实意图：" + _choice(answers, "true_intent"))
-        confidence = _finite_number(true_intent.get("confidence"))
-        self.intentConfidence.setText(f"把握 {confidence * 100:.0f}%" if confidence is not None else "")
-        self.intentConfidence.setVisible(confidence is not None)
+        self.summary.setText("真实意图：" + choice_summary("true_intent", true_intent))
+        distribution = choice_distribution("true_intent", true_intent)
+        self.intentConfidence.setText(distribution)
+        self.intentConfidence.setVisible(bool(distribution))
         details = [
-            "需要：" + _choice(answers, "she_needs"),
-            "行动：" + _choice(answers, "best_action"),
+            "需要：" + choice_summary("she_needs", answers.get("she_needs")),
+            "行动：" + choice_summary("best_action", answers.get("best_action")),
         ]
-        reply_probability = _finite_number((answers.get("should_reply_now") or {}).get("noul"))
-        if reply_probability is not None:
-            details.append("可给实质" if reply_probability >= 0.5 else "先别给实质")
         self.intent.setText(" · ".join(details))
-        resolved_probability = _finite_number((answers.get("tension_resolved") or {}).get("noul"))
-        resolved = resolved_probability is not None and resolved_probability >= 0.7
-        self.resolution.setText("✓ 紧张已缓解" if resolved else "")
-        self.resolution.setVisible(resolved)
-        score = _finite_number((answers.get("danger_level") or {}).get("score"), highest=9)
-        if score is not None:
-            danger_word = "很危险" if score >= 8 else "偏危险" if score >= 6 else "留神" if score >= 3 else "安全"
-            self.tension.setText(f"危险 {score:.0f}/9 · {danger_word}")
-        else:
-            self.tension.setText("危险度待判断")
+        probabilities = probability_summary(answers)
+        self.resolution.setText(probabilities)
+        self.resolution.setVisible(bool(probabilities))
+        danger = answers.get("danger_level") or {}
+        score = finite_number(danger.get("score"), highest=9)
+        self.tension.setText(danger_summary(danger))
         color = _AMBER if score is not None and score >= 3 else _GREEN if score is not None else _MUTED
         if score is not None and score >= 6:
             color = _RED

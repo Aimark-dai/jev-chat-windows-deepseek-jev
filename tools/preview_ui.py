@@ -42,11 +42,18 @@ _RESULT = {
     "scores": [0.21, 0.66, 0.13],
     "answers": {
         "literal_question": {"type": "noul", "noul": 0.98},
-        "true_intent": {"type": "choice", "choice": "casual_chat", "confidence": 0.86},
-        "danger_level": {"type": "score", "score": 0},
+        "true_intent": {
+            "type": "choice", "choice": "casual_chat", "confidence": 0.86,
+            "probabilities": {"casual_chat": 0.82, "request_action": 0.12, "close_topic": 0.06},
+        },
+        "danger_level": {
+            "type": "score", "score": 0.3, "confidence": 0.91,
+            "probabilities": {"0": 0.76, "1": 0.18, "2": 0.06, "3": 0.0,
+                              "4": 0.0, "5": 0.0, "6": 0.0, "7": 0.0, "8": 0.0, "9": 0.0},
+        },
         "should_reply_now": {"type": "noul", "noul": 0.96},
-        "best_action": {"type": "choice", "choice": "make_plan"},
-        "she_needs": {"type": "choice", "choice": "action"},
+        "best_action": {"type": "choice", "choice": "make_plan", "confidence": 0.88},
+        "she_needs": {"type": "choice", "choice": "action", "confidence": 0.84},
         "tension_resolved": {"type": "noul", "noul": 0.99},
         "best_reply": {
             "type": "choice", "choice": "reply_b",
