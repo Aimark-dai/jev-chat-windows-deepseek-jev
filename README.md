@@ -109,8 +109,8 @@ DeepSeek 按预判生成 3 条候选 → TypeSafe JEV 复审排序 → 一键填
 - **API key 只进环境变量。** `DEEPSEEK_API_KEY` 和可选的 `TYPESAFE_API_KEY`
   都写进注册表 `HKCU\Environment`（跟 `setx` 同一个地方），任何文件里都不出现 key，也绝不进日志
   （报错文本一律脱敏）。
-- **启动时查一次版本号（可关）。** 只向 GitHub Releases API 发一个 GET，带的只有 UA 和当前版本号，
-  不夹带任何聊天内容；设置里「启动时检查更新」关掉就完全不发这个请求，源码直接跑（没有版本号）也
+- **启动时查一次版本号（可关）。** 只访问本项目的 GitHub Releases 最新发布页，发布页不可用时才
+  备用调用 GitHub API；请求不夹带任何聊天内容。设置里「启动时检查更新」关掉就完全不发请求，源码直接跑（没有正式版本号）也
   不会发。
 
 什么会出网：DeepSeek 起草、TypeSafe JEV 预判与复审，加上启动时（可关）一次到 GitHub 查版本号。

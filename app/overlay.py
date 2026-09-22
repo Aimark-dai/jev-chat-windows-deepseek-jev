@@ -3,8 +3,8 @@
 from datetime import datetime
 from math import isfinite
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QSizeGrip, QSizePolicy, QStackedWidget,
     QVBoxLayout, QWidget,
@@ -22,6 +22,7 @@ from app.version import VERSION
 _LOG_LINES = 300
 _MUTED = "#68776f"
 _GREEN = "#18794e"
+_PROJECT_URL = "https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev"
 _CHOICES = {
     "true_intent": {
         "confirm_you_care": "希望确认你在意", "vent_anger": "表达不满或受伤",
@@ -256,7 +257,15 @@ class Overlay:
         self.autoSendSwitch.checkedChanged.connect(self._auto_send_toggled)
         footer.addWidget(self.autoSendSwitch)
         footer.addStretch(1)
+        self.projectLink = TransparentToolButton(FIF.GITHUB, self.win)
+        self.projectLink.setFixedSize(28, 28)
+        self.projectLink.setToolTip("打开 GitHub 开源项目主页")
+        self.projectLink.setAccessibleName("打开 GitHub 开源项目主页")
+        self.projectLink.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(_PROJECT_URL)))
+        footer.addWidget(self.projectLink)
         self.footerText = _label(f"v{VERSION}", 11, _MUTED)
+        self.footerText.setToolTip("当前版本；正式发布时与 GitHub Release 标签一致")
+        self.footerText.setAccessibleName(f"当前版本 v{VERSION}")
         footer.addWidget(self.footerText)
         grip = QSizeGrip(self.win)
         grip.setFixedSize(16, 16)

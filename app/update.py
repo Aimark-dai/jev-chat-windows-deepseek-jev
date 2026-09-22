@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""查 GitHub 最新 Release，只拿版本号和链接。离线/限流/GFW 一律返回 None，绝不抛异常、绝不重试。"""
+"""查 GitHub 最新 Release，只拿版本号和链接。离线/GFW 时返回 None，不影响软件启动。"""
 from __future__ import annotations
 
 import json
+from urllib.parse import unquote, urlparse
 import urllib.request
 
+_LATEST_PAGE = "https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/latest"
 _API = "https://api.github.com/repos/Aimark-dai/jev-chat-windows-deepseek-jev/releases/latest"
 
 
@@ -17,6 +19,36 @@ def parse_version(v: str) -> tuple[int, ...] | None:
     return tuple(int(s) for s in segs)
 
 
+def _latest_from_release_page(timeout: float) -> tuple[str, str] | None:
+    """跟随 GitHub /releases/latest 跳转取 tag，避免匿名 API 限流。"""
+    req = urllib.request.Request(_LATEST_PAGE, headers={
+        "User-Agent": "jev-chat-windows/update-check",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        url = resp.geturl()
+    path = unquote(urlparse(url).path)
+    marker = "/releases/tag/"
+    if marker not in path:
+        return None
+    tag = path.rsplit(marker, 1)[1].strip("/")
+    tag = tag[1:] if tag.startswith("v") else tag
+    return (tag, url) if parse_version(tag) is not None else None
+
+
+def _latest_from_api(current: str, timeout: float) -> tuple[str, str] | None:
+    """发布页不可用时才走 API；API 可能受匿名请求限流。"""
+    req = urllib.request.Request(_API, headers={
+        "User-Agent": f"jev-chat-windows/{current}",
+        "Accept": "application/vnd.github+json",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.load(resp)
+    tag = str(data.get("tag_name") or "")
+    tag = tag[1:] if tag.startswith("v") else tag
+    url = str(data.get("html_url") or "")
+    return (tag, url) if parse_version(tag) is not None and url else None
+
+
 def check_latest(current: str, timeout=6) -> tuple[str, str] | None:
     """current 不是纯数字版本（源码跑/开发版）→ 直接跳过，不发请求，源码用户不会被打扰。
     latest 比 current 严格新才返回 (最新版本号, Release 页链接)；否则/任何异常都是 None。"""
@@ -24,21 +56,17 @@ def check_latest(current: str, timeout=6) -> tuple[str, str] | None:
     if cur is None:
         return None
     try:
-        req = urllib.request.Request(_API, headers={
-            "User-Agent": f"jev-chat-windows/{current}",
-            "Accept": "application/vnd.github+json",
-        })
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.load(resp)
-        tag = str(data.get("tag_name") or "")
-        tag = tag[1:] if tag.startswith("v") else tag
-        url = str(data.get("html_url") or "")
-        latest = parse_version(tag)
-        if latest is None or not url or latest <= cur:
-            return None
-        return tag, url
+        result = _latest_from_release_page(timeout)
     except Exception:
-        return None
+        result = None
+    if result is None:
+        try:
+            result = _latest_from_api(current, timeout)
+        except Exception:
+            return None
+    tag, url = result
+    latest = parse_version(tag)
+    return (tag, url) if latest is not None and latest > cur else None
 
 
 if __name__ == "__main__":
