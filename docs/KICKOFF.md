@@ -1,64 +1,50 @@
-# jev-chat-windows — 接续说明（OCR 版）
+# 当前项目边界与开发约定
 
-个人用的聊天回复辅助工具，挂在自己电脑的微信旁边：读到对方最新消息 → 判断意图/情绪 →
-给出 3 条候选回复（已排序）→ 人一键**填入**微信输入框。**发送永远手动，程序不自动发。**
+本文描述 `Aimark-dai/jev-chat-windows-deepseek-jev` 当前版本，不代表上游 `jev-chat/jev-chat-windows` 的原始规划。
 
-## 硬约束（照做，别破）
+## 产品目标
 
-1. 只读**自己设备上、自己有权查看**的对话。
-2. 采集只用**窗口级截图 + 本地离线 OCR**。不 hook、不注入、不读微信数据库、不解密、不碰微信进程。
-3. **截图不落盘**：捕获得到的位图始终是内存里的对象（numpy/PIL），全程不写磁盘、不进日志、不上传。
-4. **绝不自动发送**，不点发送按钮；填入输入框后停手。
-5. **不碰钱**：转账、红包、收款相关界面元素一律不碰。
-6. OpenRouter key 只从环境变量 `OPENROUTER_API_KEY` 读，任何文件不出现 key。
-7. Python 读写文件一律 `encoding='utf-8'`。
+在用户自己的 Windows 电脑上读取当前微信聊天画面，给出可核对的 JEV 判断和三条候选回复。候选由 DeepSeek 官方接口生成；启用 TypeSafe 后，JEV 负责生成前的结构化预判和生成后的质量复审、排序。
 
-## 为什么走 OCR（已实测的结论，别重测）
+## 固定边界
 
-- 微信 Windows 4.x（进程 `Weixin.exe`，窗口类 `Qt51514QWindowIcon`）界面自绘在一块
-  GPU 合成画布上（`MMUIRenderSubWindowHW`）。UIA 树只有 2 个节点、**没有控件树**——实测证伪。
-- 所以唯一干净的非侵入采集路 = 截自己的微信窗口 + 本地 OCR。离线、零 token。
+1. 只处理用户自己设备上有权查看的聊天。
+2. 只使用窗口级截图和本地 OCR，不注入微信、不读取或解密微信数据库、不读取微信进程内存。
+3. 捕获帧在内存中处理，不把聊天截图作为文件保存。
+4. API Key 仅保存在 Windows 当前用户环境变量，不进入 `config.json`、日志、源码或发布包。
+5. 自动发送默认关闭。只有用户在主界面明确打开后，才允许填入并启动 3 秒倒计时。
+6. 切换会话、出现新消息、微信不在前台、关闭开关或 JEV 复审未通过，都必须取消自动发送。
+7. 起草规则禁止生成转账、红包、收款相关操作建议。
+8. 正式版本号必须与 Git 标签一致；发布包必须同时提供 SHA256 校验文件。
 
-## 已经建好，直接用（`core/`，平台无关）
+## 当前链路
 
-| 文件 | 作用 |
-|---|---|
-| `core/jev_client.py` | Jev 判断 API 客户端（stdlib、脱敏、429/529 退避）。`ask(state, questions)` |
-| `core/questions.py` | 7 道判断题 + `build_state()` + `build_rank_question()` |
-| `core/draft.py` | 生成模型起草 3 条候选（OpenRouter，默认 DeepSeek）。解析器已自测 |
-| `core/engine.py` | **唯一入口** `analyze(messages, relationship)` → `{candidates, best_index, best_reply, answers, usage}` |
-| `tools/demo.py` | 端到端冒烟（需 key + 联网）：`python tools/demo.py` |
+```text
+微信窗口 → WGC 截图 → RapidOCR → 最近聊天状态
+  → TypeSafe JEV 预判（可选）
+  → DeepSeek 生成三条候选
+  → TypeSafe JEV 质量复审与排序（可选）
+  → 不合格时重写一次
+  → 悬浮窗展示 → 用户填入或显式授权后倒计时发送
+```
 
-`messages` 形如 `[("her","中文"),("me","中文")]`，`from` 只用 `her`/`me`，最新一条在最后。
-引擎完全不关心消息怎么来的——OCR 把屏幕上的对话整理成这个 list 喂进 `analyze()` 即可。
+关闭 TypeSafe 时，`core/jev_client.py` 使用 DeepSeek 完成基础判断与排序。
 
-## 待建（新会话干这些）
+## 关键模块
 
-1. **`capture.py` — 窗口级截图到内存，不落盘**
-   - 目标窗口：`Weixin.exe` / 类 `Qt51514QWindowIcon` / 标题「微信」。
-   - 微信是 GPU 合成窗口，`PrintWindow` 容易黑屏 → **优先用 Windows Graphics Capture**
-     （pip `windows-capture`，帧直接是 numpy，可捕获被遮挡/GPU 窗口）。
-     兜底：`PrintWindow` 带 `PW_RENDERFULLCONTENT=2`；再兜底：区域抓屏（需窗口可见）。
-   - 返回内存位图，**绝不 `.save()`**。
-2. **`ocr.py` — 内存内 OCR + 分说话人**
-   - RapidOCR（`rapidocr-onnxruntime`）直接吃 numpy 数组，不落文件。
-   - 裁到聊天气泡区；按每段文字**框的 x 中心**分左右：右=me、左=her（可加气泡背景色过滤头像/时间戳/系统提示）。
-   - **diff**：跟上一帧比，只在冒出**新的 her 消息**时才触发下游（省 token，也避免重复分析）。
-   - `probe/probe_ocr.py` 里已有 x 阈值分左右的草稿，可参考。
-3. **`overlay.py` — 半透明置顶悬浮窗**：显示判断摘要 + 3 条候选（★ 推荐），每条一个「填入」按钮。
-   tkinter（`-topmost`/`-alpha`，stdlib）够用；要更顺再上 PySide6。
-4. **`fill.py` — 填入不发送**：把选中的候选写剪贴板 → 聚焦微信输入框 → 粘贴。**绝不发回车/点发送。**
-5. **`main.py` — 主循环**：capture → ocr → 检测新 her 消息 → `engine.analyze()` → overlay。
-   静默期不调 Jev（10 分钟无新消息 = 0 次调用）。
+| 文件 | 责任 |
+| --- | --- |
+| `core/engine.py` | 全链路编排、复审、限次重写与结果汇总 |
+| `core/typesafe_client.py` | TypeSafe 官方 System One 请求、返回校验和错误处理 |
+| `core/jev_client.py` | 关闭 TypeSafe 时的 DeepSeek 判断实现 |
+| `core/questions.py` | JEV 预判、复审和排序问题定义 |
+| `core/draft.py` | DeepSeek 候选生成与输出清洗 |
+| `app/capture.py` | Windows 微信窗口捕获 |
+| `app/ocr.py` | 本地 OCR、说话人和会话识别 |
+| `app/fill.py` | 填入微信及自动发送门禁 |
+| `app/overlay.py` | 主界面、设置、判断卡片和倒计时状态 |
+| `app/update.py` | 查询本仓库 GitHub Release 的新版本 |
 
-## 技术坑备忘
+## 来源说明
 
-- GPU 窗口截图黑屏 → 用 Windows Graphics Capture，别用普通 BitBlt/PrintWindow。
-- 图片全程内存对象（numpy/PIL），OCR 引擎吃数组不吃路径，天然不落盘。
-- 中文 OCR：RapidOCR 够用；不够准就换 PaddleOCR 或只 OCR 裁剪后的聊天区。
-- 群聊按一对一分析会不准，先只做单聊。
-
-## 参考项目
-
-安卓原版 `Finderchangchang/jev-chat-JARVIS`（同一套 Jev 判断内核，采集是安卓无障碍）。
-Jev 接口、题目口径都跟 `core/` 里一致。
+Windows 截图、OCR 和悬浮窗基础来自 MIT 项目 [jev-chat/jev-chat-windows](https://github.com/jev-chat/jev-chat-windows)。本仓库的模型链路、TypeSafe 官方直连、自动发送门禁、版本发布和后续界面调整属于本仓库的二次开发。完整说明见根目录 [NOTICE.md](../NOTICE.md)。
