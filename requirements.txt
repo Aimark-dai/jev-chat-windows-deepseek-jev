@@ -1,0 +1,10 @@
+# ASCII only: pip on Chinese Windows decodes this file as GBK and chokes on UTF-8 comments.
+rapidocr-onnxruntime>=1.4,<2  # offline Chinese OCR; 1.2.x rejects det_limit_* ctor args and 1.4.x has no text_detector attr, so pin 1.4
+numpy                         # frames are numpy arrays; chat-area detection is all numpy
+windows-capture               # Windows Graphics Capture, captures GPU-composited windows
+PySide6-Fluent-Widgets        # overlay UI (pulls in PySide6)
+pillow                        # only for the synthetic images in probe/
+
+# optional, only for the two old UIA probes (already disproved; install to reproduce)
+# uiautomation                # probe_win.py / probe_win2.py
+# winsdk                      # probe_notify.py

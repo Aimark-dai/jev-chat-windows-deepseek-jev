@@ -1,0 +1,60 @@
+name: release
+
+# 推 v 开头的 tag 就出一个 Release；手动触发只出 artifact，方便试打包
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 建 Release 要写权限
+
+jobs:
+  build:
+    runs-on: windows-latest  # 只能在 Windows 上打，PyInstaller 不能交叉编译
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 写入版本号（tag 用 tag 名，手动触发用短 SHA）
+        shell: pwsh
+        run: |
+          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v','' } else { $env:GITHUB_SHA.Substring(0, 7) }
+          Set-Content -Path app/version.py -Value ('VERSION = "' + $ver + '"') -Encoding utf8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 装依赖
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: 打包
+        run: pyinstaller --noconfirm --clean jev.spec
+
+      - name: 压 zip（tag 用 tag 名，手动触发用短 SHA）
+        id: pack
+        shell: pwsh
+        run: |
+          $exe = 'dist\jev-chat-windows\jev-chat-windows.exe'
+          if (-not (Test-Path $exe)) { throw "exe 没生成：$exe" }
+          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:GITHUB_SHA.Substring(0, 7) }
+          $zip = "jev-chat-windows-$ver.zip"
+          Compress-Archive -Path 'dist\jev-chat-windows' -DestinationPath $zip
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "zip=$zip"
+          "{0}  {1:N1} MB" -f $zip, ((Get-Item $zip).Length / 1MB)
+
+      - name: 上传构建产物
+        if: always()  # 失败时也把已经有的东西捞上来
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-chat-windows
+          path: '*.zip'
+          if-no-files-found: warn
+
+      - name: 发 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pack.outputs.zip }}
+          generate_release_notes: true
