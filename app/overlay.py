@@ -540,15 +540,16 @@ class Overlay:
             "在 platform.deepseek.com 申请。用于生成 3 条候选；关闭 JEV 时也负责判断排序。"
         ))
         jev_row = QHBoxLayout()
-        jev_row.addWidget(_label("使用 TypeSafe JEV 判断", 13), 1)
+        jev_row.addWidget(_label("使用 TypeSafe JEV 全链路优化", 13), 1)
         self.jevSwitch = SwitchButton()
         self.jevSwitch.setOnText("开")
         self.jevSwitch.setOffText("关")
-        self.jevSwitch.setAccessibleName("使用 TypeSafe JEV 判断")
+        self.jevSwitch.setAccessibleName("使用 TypeSafe JEV 全链路优化")
         jev_row.addWidget(self.jevSwitch)
         box.addLayout(jev_row)
         box.addWidget(self._hint(
-            "开启后由 TypeSafe 官方 JEV 判断意图、风险和最佳回复，并显示候选概率。"
+            "开启后 JEV 先判断意图、风险和行动，再指导 DeepSeek 起草并复审排序。"
+            "每条新消息通常调用 JEV 2 次；不合格时重写并再复审 1 次。"
         ))
         typesafe_label = _label("TypeSafe 官方 API 密钥（JEV 判断）", 13)
         box.addWidget(typesafe_label)

@@ -1,10 +1,10 @@
 # jev-chat-windows
 
 > **本机官方直连定制版（2026-09-22）**：DeepSeek 官方接口负责生成候选话术；
-> 判断与排序可在设置中选择 DeepSeek，或使用 TypeSafe 官方 JEV 直连。
+> 开启 TypeSafe JEV 后，JEV 会先判断意图、风险和行动，再指导 DeepSeek 生成，最后复审排序；
+> 候选全部不合格时只重写一次，第二次仍不合格会禁止自动发送并要求人工确认。
 > JEV 使用 `TYPESAFE_API_KEY` 调用 `https://api.typesafe.ai/v1/systemone`，不经过 OpenRouter，
 > 并显示 JEV 返回的候选概率。两种密钥都只保存在 Windows 当前用户环境变量。
-> 下方涉及“OpenRouter 必填”的段落仅描述官方原版，不适用于本机定制构建。
 > 主界面底部可选开启“3 秒自动发送”；默认关闭。开启后先替换填入微信输入框，
 > 显示 3 秒可取消倒计时，然后按 Enter 发送。切换会话、来新消息或微信不在前台时会取消。
 
@@ -13,8 +13,8 @@ DeepSeek 接口依据：
 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、
 [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
-微信（Windows 4.x）旁挂的回复辅助：本地 OCR 读屏上的对话 → DeepSeek 生成 3 条候选 →
-DeepSeek 或 TypeSafe JEV 判断排序 → 一键填入微信输入框。默认手动发送；主界面开启“3秒自动发送”后，
+微信（Windows 4.x）旁挂的回复辅助：本地 OCR 读屏上的对话 → TypeSafe JEV 预判 →
+DeepSeek 按预判生成 3 条候选 → TypeSafe JEV 复审排序 → 一键填入微信输入框。默认手动发送；主界面开启“3秒自动发送”后，
 会先填入并显示可取消倒计时，再按 Enter 发送。
 
 判断内核来自安卓版 [Finderchangchang/jev-chat-JARVIS](https://github.com/Finderchangchang/jev-chat-JARVIS)，
@@ -30,9 +30,10 @@ DeepSeek 或 TypeSafe JEV 判断排序 → 一键填入微信输入框。默认�
 2. 解压到一个固定目录（整个文件夹一起，exe 要用旁边那堆文件）
 3. 双击 `jev-chat-windows.exe`
 
-要求：Windows 10 1903+ / 11，微信 Windows 4.x，一个 OpenRouter API key（[openrouter.ai](https://openrouter.ai/)）。
+要求：Windows 10 1903+ / 11、微信 Windows 4.x、一个 DeepSeek 官方 API key；如需 JEV 全链路优化，
+再准备一个 TypeSafe 官方 API key。
 
-首次启动会弹设置页填 OpenRouter API key。两个 key 都写进 Windows 用户环境变量（注册表 `HKCU\Environment`），
+首次启动会弹设置页填写 DeepSeek key，并可开启 TypeSafe JEV。两个 key 都写进 Windows 用户环境变量（注册表 `HKCU\Environment`），
 不落任何文件；其余设置写在 exe 旁边的 `config.json`，整个文件夹拷走设置也跟着走。
 
 > exe 没签名，SmartScreen 会拦一下：「更多信息」→「仍要运行」。介意就往下看「自己打包」，自己打的更踏实。
@@ -41,31 +42,22 @@ DeepSeek 或 TypeSafe JEV 判断排序 → 一键填入微信输入框。默认�
 
 **第一次启动**
 
-1. 弹出的设置页里填 **OpenRouter API key**（[openrouter.ai](https://openrouter.ai/) 申请）。这个必填：
-   判断意图、紧张度、给三条候选排序的 Jev 模型（`typesafe/jev-1.13`）只在 OpenRouter 上有。
-2. 选「你们的关系」（恋人 / 朋友 / 同事 / 家人 / 自定义），保存。可以用了。
-
-**国内用户强烈建议：起草切到 DeepSeek 直连**
-
-起草三条候选默认也走 OpenRouter，但 OpenRouter 在国外，从国内过去这一步要等好几秒、还时不时抽风。
-DeepSeek 官方 API（`api.deepseek.com`）国内直连，起草基本就是一次 HTTP 请求的时间，体感差好几倍：
-
-1. 去 [platform.deepseek.com](https://platform.deepseek.com/) 申请一个 key（很便宜，起草一次几厘钱）
-2. 设置页「回复服务」→「起草模型来源」选 **DeepSeek 直连**，填 DeepSeek key，保存
-
-Jev 判断那一步仍然走 OpenRouter，它比起草轻得多，慢一点无所谓。两个 key 都只进注册表，不落文件。
+1. 填写 **DeepSeek 官方 API key**（[platform.deepseek.com](https://platform.deepseek.com/) 申请）。
+2. 需要 JEV 全链路优化时，打开对应开关并填写 **TypeSafe 官方 API key**。
+3. 选「你们的关系」（恋人 / 朋友 / 同事 / 家人 / 自定义），保存即可。
 
 **日常怎么用**
 
 - 微信开着、别最小化（用别的窗口盖住没事），把要聊的会话点开
 - 对方来一条消息 → 悬浮窗几秒后给判断摘要 + 三条候选（带 Jev 给的胜出概率）
-- 点「填入微信」→ 文字进微信输入框 → **你自己看一眼、改一改、按发送**。程序永远不碰发送
+- 点「填入微信」→ 文字进微信输入框 → **你自己看一眼、改一改、按发送**。只有显式打开“3秒自动发送”才会代按 Enter
 - 你在微信里切到哪个会话，悬浮窗就跟到哪个；群聊会带上发言人名，想指定回复给谁去设置里开「群聊指定回复对象」
 - 暂时不想让它读微信：标题栏开关拨到「已暂停」
 
 **花多少钱**
 
-只有对方来新消息才调一次模型：一次起草（DeepSeek Flash）+ 一次 Jev 判断，十分钟没人说话就是十分钟零调用。
+只有对方来新消息才调用服务。开启 JEV 时通常是一次 JEV 预判 + 一次 DeepSeek 起草 + 一次 JEV 复审；
+复审不合格时再增加一次 DeepSeek 重写和一次 JEV 复审。十分钟没人说话就是十分钟零调用。
 思考模式默认关，别开——起草三句话用不上，慢好几倍还贵。
 
 ## 截图
@@ -94,7 +86,7 @@ Jev 判断那一步仍然走 OpenRouter，它比起草轻得多，慢一点无�
 - **判断摘要**：建议动作、可能意图、对方可能需要、紧张度 0–9。
 - **采集开关**：标题栏一拨就停，WGC 会话一起停掉（Win10 的黄框跟着消失），已有候选不受影响。
 - **实时聊天记录**：底部展开，看 OCR 到底读出了什么，认错了一眼就能发现。
-- **起草模型来源可选**：OpenRouter，或 DeepSeek 直连（更快，另填一个 key）。
+- **JEV 全链路优化**：先判断意图、风险和行动，再指导 DeepSeek 生成并复审；不合格最多重写一次。
 - **思考模式开关**：默认关；开了模型先想再写，更斟酌但慢好几倍、贵一些。
 - **参考上下文条数**：3~30，默认 10，起草和判断都按它取最近 N 条。
 - **说话风格**：一句话描述自己的口吻，补在「照着你最近发的消息模仿」之上。
@@ -110,18 +102,18 @@ Jev 判断那一步仍然走 OpenRouter，它比起草轻得多，慢一点无�
 - **只截自己的微信窗口 + 本地离线 OCR（RapidOCR）。** 不 hook、不注入、不读微信数据库、不解密、
   不碰微信进程内存。
 - **截图只在内存里。** 捕获到的帧是 numpy 数组，全程不写磁盘、不进日志、不上传，程序里没有 `.save()`。
-- **绝不自动发送。** 只把文字粘进输入框就停手，不发回车、不点发送按钮。发不发、改不改，你来定。
+- **自动发送默认关闭。** 只有用户显式打开主界面开关才会在 3 秒倒计时后按 Enter；JEV 复审未通过时强制禁止自动发送。
 - **不碰钱。** 转账、红包、收款相关的界面元素一律不碰，起草的 system prompt 里也禁了这几个话题。
 - **只有对方的新消息到来（或你在群里换了回复对象）才调一次模型。** 静默期零调用——十分钟没人说话
   就是十分钟零 token。
-- **API key 只进环境变量。** `OPENROUTER_API_KEY` 和（选了 DeepSeek 直连才要的）`DEEPSEEK_API_KEY`
+- **API key 只进环境变量。** `DEEPSEEK_API_KEY` 和可选的 `TYPESAFE_API_KEY`
   都写进注册表 `HKCU\Environment`（跟 `setx` 同一个地方），任何文件里都不出现 key，也绝不进日志
   （报错文本一律脱敏）。
 - **启动时查一次版本号（可关）。** 只向 GitHub Releases API 发一个 GET，带的只有 UA 和当前版本号，
   不夹带任何聊天内容；设置里「启动时检查更新」关掉就完全不发这个请求，源码直接跑（没有版本号）也
   不会发。
 
-什么会出网：`core/` 那两次调用（起草 + 判断/排序），加上启动时（可关）一次到 GitHub 查版本号。
+什么会出网：DeepSeek 起草、TypeSafe JEV 预判与复审，加上启动时（可关）一次到 GitHub 查版本号。
 `core/` 送出去的是**最近 N 条对话文本**（N = 设置里的「参考上下文」，默认 10；群聊带发言人名）、
 **关系设置**、**你自己最近 12 条 60 字以内的短消息**（当口吻样本，链接和长段不送）、**你填的说话
 风格**，群聊指定了回复对象的话再加一个对象名。除此之外没有别的。OCR 全程离线。
@@ -137,6 +129,8 @@ WGC 截微信窗口（GPU 合成窗口也能截，被遮挡也能截）
     发言人名摘出来挂到它下面那条消息上
   → 跟上一帧比，滚动翻出来的旧消息不重复上报
   → 冒出新的 her 消息才调 core.engine.analyze()
+  → TypeSafe JEV 预判 → DeepSeek 按判断生成 → TypeSafe 复审排序
+  → 全部不合格则重写一次；仍不合格只展示并禁止自动发送
   → 悬浮窗给判断摘要 + 3 条候选 → 点「填入微信」
 ```
 
@@ -146,13 +140,12 @@ WGC 截微信窗口（GPU 合成窗口也能截，被遮挡也能截）
 
 | 环节 | 服务 | 模型 | key |
 | --- | --- | --- | --- |
-| 起草 3 条候选 | OpenRouter（默认） | `deepseek/deepseek-v4.1-flash` | `OPENROUTER_API_KEY` |
-| 起草 3 条候选 | DeepSeek 直连（更快，可选） | `deepseek-flash`（DeepSeek-V4.1-Flash） | `DEEPSEEK_API_KEY` |
-| 判断 + 排序 | OpenRouter（`/api/alpha/decisions`） | `typesafe/jev-1.13` | `OPENROUTER_API_KEY` |
+| 意图、风险、行动预判 | TypeSafe 官方 System One | `jev-latest` | `TYPESAFE_API_KEY` |
+| 起草 3 条候选 | DeepSeek 官方 | `deepseek-flash` | `DEEPSEEK_API_KEY` |
+| 质量复审 + 排序 | TypeSafe 官方 System One | `jev-latest` | `TYPESAFE_API_KEY` |
 
-起草走哪家在设置里选；判断和排序永远走 OpenRouter，所以 OpenRouter key 必填。起草是**盲起草**——不把
-Jev 的判断喂给它，让它自己读对话；7 道判断题加一道「哪条候选最合适」一次问完，概率就是卡片上的百分比。
-温度 1.2，`max_tokens` 400；思考模式默认关，开了会带上思考开关、`max_tokens` 提到 4000（DeepSeek 把
+开启 JEV 后，第一次判断的结构化结果会直接交给 DeepSeek 约束生成；生成后再由 JEV 做质量门禁和排序。
+全部候选不合格时按 JEV 给出的主要问题重写一次。温度 0.6，`max_tokens` 400；思考模式默认关，开了会带上思考开关、`max_tokens` 提到 4000（DeepSeek 把
 思考过程也算进去，400 会把答案截断）。模型只给出 1~2 条时会带着它的回答追问一次补齐，还不够就按实际
 条数走（少于 2 条就不排序）。
 
@@ -180,8 +173,8 @@ Jev 的判断喂给它，让它自己读对话；7 道判断题加一道「哪�
 - **Windows 10 1903+ 或 Windows 11**（Windows Graphics Capture 的最低要求）
 - **Python 3.10+**（Releases 里的 exe 是 CI 用 3.11 打的；只想用 exe 的话不用装 Python）
 - **微信 Windows 4.x**（`Weixin.exe`）
-- **OpenRouter API key**（[openrouter.ai](https://openrouter.ai/)），选了直连再加一个
-  [DeepSeek key](https://platform.deepseek.com/)
+- **DeepSeek 官方 API key**（[platform.deepseek.com](https://platform.deepseek.com/)）
+- **TypeSafe 官方 API key**（可选；开启 JEV 全链路优化时需要）
 
 > Win10 上 WGC 会在微信窗口外画一圈黄框，系统不给关；Win11 才能关掉。
 > 嫌碍眼就把标题栏的采集开关拨到「已暂停」，黄框立刻消失。
@@ -201,7 +194,7 @@ python main.py
 
 PyCharm / VS Code 里直接 Run `main.py` 也行。
 
-首次启动会自动弹出设置页：填 OpenRouter API key，选你们的关系（恋人 / 朋友 / 同事 / 家人 / 自定义）。
+首次启动会自动弹出设置页：填 DeepSeek 官方 API key，可选开启 TypeSafe JEV，再选你们的关系。
 key 写进注册表 `HKCU\Environment`，重启后依然有效，不落任何文件；其余设置写进项目根的 `config.json`
 （已在 `.gitignore` 里）。
 
@@ -228,10 +221,11 @@ pyinstaller --noconfirm --clean jev.spec
 | 说话风格（可选） | 一句话描述自己的口吻，只喂给起草；留空就只靠最近消息模仿 | `config.json` → `style` |
 | 参考上下文 | 起草和判断各看最近多少条消息，3~30 | `config.json` → `context`（默认 10） |
 | 群聊指定回复对象 | 开了群聊里才有「回复对象」那一行，候选针对 TA 写 | `config.json` → `reply_target`（默认关） |
-| OpenRouter API 密钥 | 判断和排序必用；起草默认也用它。已配置时留空 = 保留 | 注册表 `HKCU\Environment` → `OPENROUTER_API_KEY` |
-| 起草模型来源 | OpenRouter 还是 DeepSeek 直连 | `config.json` → `draft_provider`（`openrouter` / `deepseek`） |
-| DeepSeek API 密钥 | 只在选了直连时出现，也只有起草用它 | 注册表 `HKCU\Environment` → `DEEPSEEK_API_KEY` |
-| 起草时开启思考模式 | 开了模型先想再写，慢好几倍、贵一些；两种来源都生效 | `config.json` → `thinking`（默认关） |
+| DeepSeek API 密钥 | 生成 3 条候选；关闭 JEV 时也负责判断排序 | 注册表 `HKCU\Environment` → `DEEPSEEK_API_KEY` |
+| TypeSafe JEV 全链路优化 | 先预判、再指导生成、最后复审排序 | `config.json` → `judge_provider`（默认 `deepseek`） |
+| TypeSafe API 密钥 | 仅在开启 JEV 全链路优化时需要 | 注册表 `HKCU\Environment` → `TYPESAFE_API_KEY` |
+| 起草时开启思考模式 | 开了模型先想再写，慢好几倍、贵一些 | `config.json` → `thinking`（默认关） |
+| 3秒自动发送 | 显式开启后才自动发送；JEV 复审不通过时强制禁用 | `config.json` → `auto_send`（默认关） |
 | 启动时检查更新 | 开了才在启动时查一次 GitHub 最新版本号，有新版本就在标题栏下面提示 | `config.json` → `check_update`（默认开） |
 
 主界面上那几个（标题栏的采集开关、「当前会话」和「回复对象」下拉、「填入时带 @」勾选框）只在内存里，
@@ -267,14 +261,15 @@ app/                    UI + 采集层
   capture.py            找微信窗口 + WGC 盯帧 + 像素锚点定位消息区；帧全程内存
   ocr.py                RapidOCR 读消息区 → 按颜色分 me/her/灰字 → 滚动去重；另读头部的会话名
   worker.py             采集子进程主循环（截图 → 定位 → OCR → 去重 → 丢队列）
-  fill.py               填入不发送：写剪贴板 → 点输入框 → Ctrl+V，到此为止
+  fill.py               填入与显式授权后的发送：写剪贴板 → 点输入框 → Ctrl+V；发送前有独立门禁
   overlay.py            置顶悬浮窗：会话/回复对象、判断摘要、3 条候选、聊天记录、设置页（PySide6 + Fluent）
   settings.py           两个 key 只进注册表，其余设置落 config.json
 core/                   Jev 判断内核，平台无关，跟安卓原版同一套口径
-  engine.py             唯一入口 analyze(messages, relationship) → 候选 + 排序 + 判断
-  jev_client.py         Jev 判断 API 客户端（stdlib、脱敏、429/529 退避）
-  questions.py          7 道判断题 + build_state() + build_rank_question()
-  draft.py              起草 3 条候选（OpenRouter / DeepSeek 直连）
+  engine.py             唯一入口：JEV 预判 → DeepSeek 生成 → JEV 复审/限次重写
+  jev_client.py         关闭 TypeSafe 时使用的 DeepSeek 判断客户端
+  typesafe_client.py    TypeSafe 官方 System One / JEV 客户端
+  questions.py          预判问题、质量门禁、排序问题与状态构造
+  draft.py              DeepSeek 官方接口起草 3 条候选
 tools/
   demo.py               端到端冒烟：拿一段写死的对话跑完整链（需 key + 联网）
   preview_ui.py         用合成数据预览界面，不采集不联网不碰微信；可 --screenshot 出图
