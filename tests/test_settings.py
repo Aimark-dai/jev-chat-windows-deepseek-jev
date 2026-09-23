@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,7 +23,7 @@ class DeepSeekSettingsTests(unittest.TestCase):
             self.assertEqual(data["draft_provider"], "deepseek")
             self.assertEqual(data["relationship"], "friends")
             self.assertEqual(data["context"], 8)
-            self.assertTrue(data["auto_send"])
+            self.assertEqual(data["auto_send"], sys.platform != "darwin")
 
     def test_auto_send_defaults_off(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,6 +56,7 @@ class DeepSeekSettingsTests(unittest.TestCase):
             with patch.object(settings, "_CONFIG", str(config)):
                 self.assertFalse(settings.auto_send())
 
+    @unittest.skipIf(sys.platform == "darwin", "Mac 预览版禁止开启自动发送")
     def test_quick_auto_send_toggle_preserves_other_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "config.json"
