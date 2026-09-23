@@ -67,6 +67,17 @@ def similar(a, b):
     return len(a) == len(b) >= 3 and sum(x != y for x, y in zip(a, b)) <= 1  # 短句错一个字
 
 
+def _same_message(old, current):
+    """消息去重比会话名匹配更严格：短句错一个字可能就是另一条真实消息。"""
+    old_who, old_text = old
+    who, text = current
+    if old_who != who:
+        return False
+    if old_text == text:
+        return True
+    return min(len(old_text), len(text)) > 4 and similar(old_text, text)
+
+
 class Reader:
     """一个会话一个 Reader：lh/seen 各自算各自的，切走再切回来不会把旧消息当新的重报一遍。"""
 
@@ -74,6 +85,7 @@ class Reader:
         self.ocr = _engine()
         self.lh = None  # 正常气泡字高，头一帧定
         self.seen = []  # [(who, name, text)]，累计，封顶 500
+        self.visible = []  # 上一帧按位置排列的消息；用顺序而不是单句相似度判断新增
 
     def read(self, chat, pane_bg):
         """→ [(who, name, text, y)]，同一气泡的多行已合并。who ∈ me/her；name 群聊里是发言人，单聊 None。"""
@@ -89,6 +101,15 @@ class Reader:
                 on_pane = np.abs(bg - pane_bg).sum() <= 6
                 if on_pane and box[0][0] < 0.25 * W and len(text) <= 16 and not re.search("[:：]", text):
                     name = text
+                elif raw and 0 <= box[0][1] - raw[-1][4] <= 65:
+                    # 微信里引用的图片下方只露出「原作者:」和缩略图；原作者不是当前发言人，
+                    # 图片里的内容也没有被读取。把归属和缺失状态附到上一条气泡，避免模型脑补。
+                    quoted = re.fullmatch(r"\s*([^:：\s]{1,16})\s*[:：]\s*", text)
+                    if quoted:
+                        previous = raw[-1]
+                        raw[-1] = (previous[0], previous[1],
+                                   previous[2] + f"\n[引用：{quoted.group(1)}的消息，内容未完整识别]",
+                                   previous[3], previous[4], previous[5])
                 continue
             if kind is None or (self.lh and h < 0.6 * self.lh):
                 continue  # 字比正常气泡小得多 = 图片消息（截图/表情包）里的字，不是气泡
@@ -106,17 +127,38 @@ class Reader:
         return [(w, n, t, y) for w, n, t, y, _ in lines]
 
     def new_lines(self, lines):
-        """去重（滚动不重复）→ 这一帧里真正新出现的 [(who, name, text)]。
-        本帧有已知行时只要已知行下方的：往上滚翻出来的旧消息在已知行上方，不算。
-        本帧一行已知的都没有（大图把旧文字全顶出去了、切了聊天、滚远了）：全算，宁可多算不能漏。
-        ponytail: 同一人连发两句一模一样的会吞一句——对触发分析无害。"""
-        known_y = [y for w, n, t, y in lines if self._seen(w, n, t)]
-        floor = max(known_y) if known_y else -1
-        new = [(w, n, t) for w, n, t, y in lines if y > floor and not self._seen(w, n, t)]
+        """按连续画面中的消息顺序对齐；只有最后一段已见消息之后的才是新增。
+
+        单条文字不能当位置锚点：同一个人可能再次发「好的」，OCR 也可能把
+        「好呀」误认成「好吧」。翻到旧记录时，重叠段后没有新消息就不触发。
+        """
+        if not lines:
+            return []  # OCR 临时漏掉整帧时，保留上一帧锚点
+        current = [(w, t) for w, _, t, _ in lines]
+        previous = getattr(self, "visible", [])
+        best_len = best_end = 0
+        for old_index in range(len(previous)):
+            for new_index in range(len(current)):
+                length = 0
+                while (old_index + length < len(previous)
+                       and new_index + length < len(current)
+                       and _same_message(previous[old_index + length], current[new_index + length])):
+                    length += 1
+                end = new_index + length
+                if length > best_len or (length == best_len and length and end < best_end):
+                    best_len, best_end = length, end
+        if best_len:
+            new = [(w, n, t) for w, n, t, _ in lines[best_end:]]
+        else:
+            # 无重叠（首次采集/跳过很多帧）时，不让一个重复短句把它上面的新消息遮掉。
+            known_y = [y for w, n, t, y in lines if len(t) > 4 and self._seen(w, n, t)]
+            floor = max(known_y) if known_y else -1
+            new = [(w, n, t) for w, n, t, y in lines if y > floor and not self._seen(w, n, t)]
+        self.visible = current
         self.seen.extend((w, n, t) for w, n, t, _ in lines if not self._seen(w, n, t))
         del self.seen[:-500]
         return new
 
     def _seen(self, who, name, text):
         # 名字不参与判重：名字行滚出画面后同一条消息会从 her(LO) 变成 her，不能算新消息
-        return any(w == who and similar(t, text) for w, _, t in self.seen)
+        return any(_same_message((w, t), (who, text)) for w, _, t in self.seen)

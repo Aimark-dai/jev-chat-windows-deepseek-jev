@@ -25,6 +25,11 @@ JUDGE_QUESTIONS: dict = {
         "type": "choice",
         "instructions": (
             "What is the other person's true intent in the latest message, given the full conversation? "
+            "For a group chat, read the last chat.messages in order with speaker names: identify the current topic, "
+            "not an older topic. If chat.reply_to is set, prioritize that person's recent messages and topic; "
+            "if that person has no visible recent message, do not invent their view. "
+            "A quoted or forwarded screenshot belongs to its quoted author, not to me; if its content is not visible, "
+            "do not treat a claimed rule change as verified. "
             "Prefer tone and context over surface wording. "
             "If they are checking whether you remember something or still care, choose confirm_you_care "
             "even if the words look like a request to 'say it' or to do something. "
@@ -115,6 +120,8 @@ JUDGE_QUESTIONS: dict = {
         "type": "choice",
         "instructions": (
             "What type of next action is best? Do not decide whether to send a message immediately. "
+            "In a group, choose an action relevant to the latest speaker's current topic, or to chat.reply_to's "
+            "visible topic when a target is selected. Do not attribute another speaker's experience to me. "
             "Ignore timing. Choose only the action type. "
             "If they asked you to recall a specific past message or event and you have not shown that you actually remember it, "
             "choose check_history — do not apologize or invent a plan instead."
@@ -249,6 +256,13 @@ def build_rank_question(candidates: list[str]) -> dict:
                 "given the conversation and the other person's true need? "
                 "Prefer a reply that matches the best action type. "
                 "Penalize dismissive, over-promising, or off-topic replies. "
+                "For a group, prefer the current topic or chat.reply_to's visible topic when selected; "
+                "penalize any unsupported first-person claim that borrows another member's experience, data, or practice. "
+                "Penalize treating an unverified screenshot or quoted image as a confirmed change or as something me sent. "
+                "If the image is already quoted or shown in chat, asking to re-send it is redundant; prefer checking "
+                "the original image or authoritative source without claiming me could not see it. "
+                "Do not choose unsupported personal memory about a previous rule unless me actually stated it. "
+                "The quoting speaker is not necessarily the quoted author; do not call it that speaker's image. "
                 "If the facts are not yet confirmed, prefer the candidate that looks them up "
                 "instead of faking memory or a vague apology."
             ),
@@ -269,7 +283,14 @@ def build_review_questions(candidates: list[str]) -> dict:
                 "Is at least one candidate safe and genuinely usable as the next message? "
                 "Judge against the conversation, relationship, true intent, best action, and known facts. "
                 "Choose regenerate when every candidate misses the intent, invents facts, sounds robotic, "
-                "addresses the wrong person, over-promises, or could worsen the situation."
+                "addresses the wrong person, over-promises, or could worsen the situation. "
+                "For a group, reject replies that follow an old or wrong speaker's topic, or make unsupported "
+                "first-person claims from another group member's experience, data, or practice. "
+                "Reject any candidate that treats an unverified screenshot or quoted image as a confirmed change "
+                "or claims me sent or read it. If an image is already quoted or shown, asking to re-send it "
+                "is not a usable next reply. Do not confuse AI's missing image text with me not seeing the image."
+                " The quoting speaker is not the quoted author: reject wrong ownership. Reject invented personal "
+                "memory about earlier rules when me has not stated such knowledge."
             ),
             "criteria": {
                 "pass": (
@@ -290,7 +311,7 @@ def build_review_questions(candidates: list[str]) -> dict:
                 "good": "At least one candidate is already usable.",
                 "wrong_intent": "The replies respond to the wrong underlying intent or action.",
                 "tone_mismatch": "The replies use the wrong tone for this relationship or conversation.",
-                "factual_invention": "The replies invent memory, facts, timing, promises, or commitments.",
+                "factual_invention": "The replies invent memory, facts, timing, promises, commitments, or first-person experience borrowed from another group member.",
                 "generic_or_robotic": "The replies sound templated, verbose, vague, or unlike a real chat.",
                 "unsafe_or_overpromise": "The replies make unsafe promises or may escalate the situation.",
                 "wrong_target": "The replies address the wrong person or ignore the selected reply target.",

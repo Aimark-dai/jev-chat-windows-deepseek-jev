@@ -5,6 +5,43 @@ from core import engine
 
 
 class DeepSeekEngineTests(unittest.TestCase):
+    def test_jev_review_checks_unread_quote_is_not_confirmed_change(self):
+        reject = {"answers": {"candidate_quality": {"choice": "regenerate"}}}
+        accept = {"answers": {"candidate_quality": {"choice": "pass"}}}
+        messages = [("her", "这个\n[引用：成员乙的消息，内容未完整识别]", "X")]
+        with patch.object(engine, "draft_candidates", side_effect=[["这个改动我没注意过"], ["先核对原始说明"]]), \
+             patch.object(engine, "typesafe_ask", side_effect=[{"answers": {}}, reject, accept]) as ask:
+            engine.analyze(messages, "同行", judge_provider="typesafe")
+        for call in ask.call_args_list:
+            self.assertIn("引用：成员乙", call.args[0]["chat"]["messages"][0]["text"])
+        review = ask.call_args_list[1].args[1]["candidate_quality"]["instructions"]
+        rank = engine.build_rank_question(["甲", "乙"])["best_reply"]["instructions"]
+        self.assertIn("unverified screenshot", review)
+        self.assertIn("unverified screenshot", rank)
+        self.assertIn("re-send", review)
+        self.assertIn("re-send", rank)
+        self.assertIn("quoted author", review)
+        self.assertIn("unsupported personal memory", rank)
+
+    def test_typesafe_pre_review_and_rewrite_share_ten_named_group_messages(self):
+        messages = [("her", "不要传入的第零条", "旧人")]
+        messages += [("her", f"第{i}条", "群友甲" if i % 2 else "群友乙") for i in range(1, 11)]
+        reject = {"answers": {"candidate_quality": {"choice": "regenerate"}}}
+        accept = {"answers": {"candidate_quality": {"choice": "pass"}}}
+        with patch.object(engine, "draft_candidates", side_effect=[["甲", "乙"], ["丙", "丁"]]) as draft, \
+             patch.object(engine, "typesafe_ask", side_effect=[{"answers": {}}, reject, accept]) as ask:
+            engine.analyze(messages, "同行", context=10, reply_to="群友甲", judge_provider="typesafe")
+        expected = [{"from": "her", "text": f"第{i}条", "name": "群友甲" if i % 2 else "群友乙"}
+                    for i in range(1, 11)]
+        for call in ask.call_args_list:
+            self.assertEqual(call.args[0]["chat"]["messages"], expected)
+            self.assertEqual(call.args[0]["chat"]["reply_to"], "群友甲")
+        self.assertEqual([call.kwargs["keep"] for call in draft.call_args_list], [10, 10])
+        self.assertTrue(all(call.args[0] == messages for call in draft.call_args_list))
+        self.assertIn("group", ask.call_args_list[0].args[1]["true_intent"]["instructions"].lower())
+        self.assertIn("first-person", ask.call_args_list[1].args[1]["candidate_quality"]["instructions"].lower())
+        self.assertIn("first-person", ask.call_args_list[2].args[1]["best_reply"]["instructions"].lower())
+
     def test_deepseek_is_the_default_provider(self):
         judged = {"answers": {}, "usage": {}}
         with patch.object(engine, "draft_candidates", return_value=["甲"]) as draft:

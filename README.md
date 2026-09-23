@@ -22,7 +22,7 @@ TypeSafe 没有负责写回复。它输出结构化判断和概率；真正的�
 
 ## 下载与启动
 
-Windows 稳定版前往 [最新正式版](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/latest) 下载 `jev-chat-windows-vX.Y.Z.zip`。macOS Apple Silicon 预览版前往 [v1.0.4 预览发布页](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/tag/v1.0.4) 下载 `jev-chat-macos-arm64-v1.0.4.zip`；Intel Mac 暂无包。
+Windows 稳定版前往 [最新正式版](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/latest) 下载 `jev-chat-windows-vX.Y.Z.zip`。需要体验当前功能的 Windows 与 macOS Apple Silicon 用户可前往 [v1.0.5 预览发布页](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/tag/v1.0.5) 下载对应平台的 ZIP；Intel Mac 暂无包。
 
 1. Windows 完整解压 ZIP，运行其中的 `jev-chat-windows.exe`，不能只单独拿出 EXE。Mac 解压后把 `JevChat.app` 拖到“应用程序”，从 Finder 打开。
 2. Mac 首次运行需要在系统设置中允许“屏幕录制”和“辅助功能”；授权后重新打开应用。预览包尚未签名和公证，macOS 可能要求在系统设置的“隐私与安全性”中确认打开；不要全局关闭 Gatekeeper。
@@ -37,9 +37,14 @@ Windows 稳定版前往 [最新正式版](https://github.com/Aimark-dai/jev-chat
 ## 日常使用
 
 1. 在微信中打开要回复的单聊或群聊。
-2. 对方出现新消息后，软件读取最近聊天并生成三条候选。
-3. 先查看 JEV 判断和候选内容，再点击“填入微信”或复制按钮。
-4. 默认由你自己确认并发送。
+2. 在设置中选择关系、说话风格和参考上下文条数。群聊可指定回复对象。
+3. 对方出现新消息后，软件读取最近聊天并生成三条候选。
+4. 先查看 JEV 判断和候选内容，再点击“填入微信”或复制按钮。
+5. 默认由你自己确认并发送。
+
+Mac 微信实机效果仍需单独验收。
+
+**v1.0.5 预览版已知问题：**Windows“填入微信”在窗口或侧栏布局刚变化时，可能误点到其他会话；此问题尚未修复。请保持微信窗口布局稳定，使用前确认当前群名，并保持“3秒自动发送”关闭。若无法确认填入目标，使用“复制”后手动粘贴更安全。
 
 Windows 版如果在主界面打开“3秒自动发送”，软件会先把推荐候选填入微信输入框，再显示倒计时。倒计时期间切换会话、收到新消息、关闭开关或微信失去前台状态，都会取消发送。JEV 复审没有通过时也不会自动发送。Mac 预览版强制关闭自动发送。
 
@@ -107,7 +112,7 @@ Windows 的 `config.json` 位于程序目录；Mac 位于 `~/Library/Application
 - 仅用于读取你自己设备上、你有权查看的聊天内容。
 - 采集方式是微信窗口截图与本地 OCR；不注入微信、不解密数据库、不读取进程内存。
 - 截图帧在内存中处理，不作为聊天图片保存。
-- 调用 DeepSeek 或 TypeSafe 时，会发送你设置数量内的最近聊天、关系信息、说话风格和必要的群聊回复对象。
+- 调用 DeepSeek 或 TypeSafe 时，会发送你设置数量内的最近聊天、关系信息和必要的群聊回复对象；说话风格仅交给 DeepSeek。
 - 打开版本检查时只查询本仓库 GitHub Release，不附带聊天内容。
 - 自动发送默认关闭，Mac 预览版强制禁用；涉及转账、红包、收款的内容被起草规则明确禁止。
 - AI 判断和候选都可能出错，发送前应当人工确认。

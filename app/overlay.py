@@ -486,8 +486,9 @@ class Overlay:
         style_label.setBuddy(self.styleEdit)
         box.addWidget(self.styleEdit)
         box.addWidget(self._hint(
-            "同一会话中收集到你自己最近 6–12 条有效短消息后，候选会模仿用词、句长和标点；"
-            "这里只是本次运行的上下文学习，不会训练模型，重启后重新收集。这里还可以补一句固定口吻。"
+            "同一会话中识别到你自己最近 6–12 条有效短消息后，可选地模仿用词、句长和标点；"
+            "这与下方用于理解群聊话题的参考上下文分开。只是本次运行的口吻样本，不会训练模型，"
+            "重启后重新收集。这里还可以补一句固定口吻。"
         ))
         context_label = _label("参考上下文", 13)
         box.addWidget(context_label)
@@ -497,7 +498,8 @@ class Overlay:
         context_label.setBuddy(self.contextBox)
         box.addWidget(self.contextBox)
         box.addWidget(self._hint(
-            "这是理解当前对话用的消息数量，不是风格样本数量。太少会丢上下文，太多会稀释重点，建议 6–12。"
+            "按顺序读取最近这么多条所有人的消息及发言人，用于理解正在聊的话题；"
+            "指定回复对象时优先看 TA 的近期发言。与上方只取你自己消息的口吻样本无关，建议设为 10。"
         ))
         target_row = QHBoxLayout()
         target_row.addWidget(_label("群聊指定回复对象", 13), 1)
