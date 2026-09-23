@@ -1,6 +1,8 @@
 import json
+import io
 import os
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from core import typesafe_client
@@ -21,6 +23,25 @@ class _Response:
 
 
 class TypeSafeClientTests(unittest.TestCase):
+    def test_cloudflare_1010_is_a_nonretryable_access_denial(self):
+        error = urllib.error.HTTPError(
+            typesafe_client.API_URL, 403, "Forbidden", {},
+            io.BytesIO(json.dumps({
+                "error_code": 1010,
+                "ray_id": "a3f5d67a586b8969",
+                "detail": "The site owner has blocked access",
+            }).encode("utf-8")),
+        )
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
+            with patch("urllib.request.urlopen", side_effect=error) as urlopen:
+                with self.assertRaises(typesafe_client.TypeSafeAccessDenied) as caught:
+                    typesafe_client.ask({"messages": []}, {})
+
+        self.assertEqual(caught.exception.status, 403)
+        self.assertIn("Cloudflare 1010", str(caught.exception))
+        self.assertIn("a3f5d67a586b8969", str(caught.exception))
+        urlopen.assert_called_once()
+
     def test_ask_calls_official_systemone_api(self):
         api_response = {
             "model": "jev-1.13",

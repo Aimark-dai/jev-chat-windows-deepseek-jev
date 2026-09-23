@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import socket
 import time
 import urllib.error
@@ -19,6 +20,24 @@ except ImportError:
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
 MAX_RETRIES = 3
+
+
+class TypeSafeAccessDenied(JevError):
+    """The service rejected access; a new chat message must not trigger a retry."""
+
+
+def _access_denied_message(detail: str) -> str:
+    try:
+        error = json.loads(detail)
+    except (TypeError, ValueError):
+        error = {}
+    if isinstance(error, dict) and error.get("error_code") == 1010:
+        message = "TypeSafe JEV HTTP 403 / Cloudflare 1010：当前客户端请求被服务方拦截，请联系 TypeSafe 处理。"
+        ray_id = str(error.get("ray_id") or "")
+        if re.fullmatch(r"[0-9a-fA-F]{8,64}", ray_id):
+            message += f" Ray ID：{ray_id}。"
+        return message
+    return "TypeSafe JEV HTTP 403：服务拒绝访问，请检查账号权限或联系 TypeSafe 处理。"
 
 
 def _validate_answers(data: dict, questions: dict) -> dict:
@@ -154,6 +173,8 @@ def ask(state: dict, questions: dict, timeout: float = 20) -> dict:
             return {**result, "answers": _validate_answers(result, questions)}
         except urllib.error.HTTPError as exc:
             detail = _error_body(exc)
+            if exc.code == 403:
+                raise TypeSafeAccessDenied(_access_denied_message(detail), 403) from None
             if exc.code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:
                 time.sleep(2**attempt)
                 continue

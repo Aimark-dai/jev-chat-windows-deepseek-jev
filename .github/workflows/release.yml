@@ -1,73 +1,137 @@
 name: release
 
-# 推 v 开头的 tag 就出一个 Release；手动触发只出 artifact，方便试打包
+# 手动触发只上传构建产物；推 v 标签时，两个平台都构建成功才创建公开预览版。
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write  # 建 Release 要写权限
+  contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest  # 只能在 Windows 上打，PyInstaller 不能交叉编译
+  windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-
-      - name: 装依赖
+      - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
-
-      - name: 运行测试
+      - name: Run tests
         run: python -m unittest discover -s tests -v
-
-      - name: 写入并校验版本号（正式发布与 Git tag 一致）
+      - name: Set and verify version
         shell: pwsh
         run: |
           $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v','' } else { $env:GITHUB_SHA.Substring(0, 7) }
           Set-Content -Path app/version.py -Value ('VERSION = "' + $ver + '"') -Encoding utf8
           $actual = python -c "from app.version import VERSION; print(VERSION)"
-          if ($actual.Trim() -ne $ver) { throw "版本号写入失败：期望 $ver，实际 $actual" }
-
-      - name: 打包
+          if ($actual.Trim() -ne $ver) { throw "Version mismatch: expected $ver, got $actual" }
+      - name: Build Windows folder
         run: pyinstaller --noconfirm --clean jev.spec
-
-      - name: 压 zip（tag 用 tag 名，手动触发用短 SHA）
-        id: pack
+      - name: Check bundled QtCore
+        run: python tools/check_bundle_qt.py dist/jev-chat-windows
+      - name: Package Windows release
         shell: pwsh
         run: |
           $exe = 'dist\jev-chat-windows\jev-chat-windows.exe'
-          if (-not (Test-Path $exe)) { throw "exe 没生成：$exe" }
+          if (-not (Test-Path $exe)) { throw "Missing exe: $exe" }
           $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:GITHUB_SHA.Substring(0, 7) }
           $zip = "jev-chat-windows-$ver.zip"
           Compress-Archive -Path 'dist\jev-chat-windows' -DestinationPath $zip
-          $sha = "$zip.sha256"
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath $sha -Value "$hash  $zip" -Encoding ascii
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "zip=$zip"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$sha"
-          "{0}  {1:N1} MB" -f $zip, ((Get-Item $zip).Length / 1MB)
-
-      - name: 上传构建产物
-        if: always()  # 失败时也把已经有的东西捞上来
-        uses: actions/upload-artifact@v4
+          Set-Content -LiteralPath "$zip.sha256" -Value "$hash  $zip" -Encoding ascii
+      - uses: actions/upload-artifact@v4
         with:
           name: jev-chat-windows
           path: |
-            *.zip
-            *.sha256
-          if-no-files-found: warn
+            jev-chat-windows-*.zip
+            jev-chat-windows-*.zip.sha256
+          if-no-files-found: error
 
-      - name: 发 Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  macos_arm64:
+    runs-on: macos-15
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          files: |
-            ${{ steps.pack.outputs.zip }}
-            ${{ steps.pack.outputs.sha }}
+          python-version: '3.11'
+          cache: pip
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = arm64
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Set and verify version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then ver="${GITHUB_REF_NAME#v}"; else ver="${GITHUB_SHA:0:7}"; fi
+          printf 'VERSION = "%s"\n' "$ver" > app/version.py
+          test "$(python -c 'from app.version import VERSION; print(VERSION)')" = "$ver"
+          echo "JEV_BUILD_VERSION=$ver" >> "$GITHUB_ENV"
+      - name: Build macOS app
+        run: pyinstaller --noconfirm --clean jev.spec
+      - name: Smoke-test bundled app startup
+        shell: bash
+        run: |
+          test -x dist/JevChat.app/Contents/MacOS/jev-chat-macos
+          python - <<'PY'
+          import os, subprocess, time
+          proc = subprocess.Popen(['dist/JevChat.app/Contents/MacOS/jev-chat-macos'], env=os.environ.copy())
+          try:
+              time.sleep(6)
+              if proc.poll() is not None:
+                  raise SystemExit(f'Bundled app exited during startup: {proc.returncode}')
+          finally:
+              proc.terminate()
+              try:
+                  proc.wait(timeout=5)
+              except subprocess.TimeoutExpired:
+                  proc.kill()
+                  proc.wait()
+          PY
+      - name: Package macOS preview
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then ver="$GITHUB_REF_NAME"; else ver="${GITHUB_SHA:0:7}"; fi
+          zip="jev-chat-macos-arm64-$ver.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist/JevChat.app "$zip"
+          shasum -a 256 "$zip" > "$zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-chat-macos-arm64
+          path: |
+            jev-chat-macos-arm64-*.zip
+            jev-chat-macos-arm64-*.zip.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos_arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jev-chat-*
+          path: release-files
+          merge-multiple: true
+      - name: Verify both platforms are present
+        shell: bash
+        run: |
+          test -f "release-files/jev-chat-windows-${GITHUB_REF_NAME}.zip"
+          test -f "release-files/jev-chat-macos-arm64-${GITHUB_REF_NAME}.zip"
+          cd release-files
+          tr -d '\r' < "jev-chat-windows-${GITHUB_REF_NAME}.zip.sha256" | sha256sum -c -
+          tr -d '\r' < "jev-chat-macos-arm64-${GITHUB_REF_NAME}.zip.sha256" | sha256sum -c -
+      - uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
           generate_release_notes: true
+          files: release-files/*
+          body: |
+            Windows 与 macOS (Apple Silicon) 构建包。macOS 为未签名、未公证预览版；CI 已验证构建与启动，尚未在真实 Mac 微信中验收读取、填入与发送。Mac 自动发送保持禁用，请只在授权聊天中人工核对后发送。正式稳定版仍以 Releases/latest 为准。

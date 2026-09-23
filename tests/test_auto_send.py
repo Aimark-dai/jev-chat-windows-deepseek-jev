@@ -1,4 +1,5 @@
 import unittest
+import sys
 from unittest.mock import Mock, patch
 
 import main
@@ -26,6 +27,8 @@ class AutoSendTests(unittest.TestCase):
         self.assertFalse(main.can_auto_send({"best_reply": ""}))
 
     def test_auto_fill_replaces_existing_draft(self):
+        if sys.platform != "win32":
+            self.skipTest("Windows keyboard implementation")
         fake = _FakeUser32(foreground=123)
         with patch.object(fill_module, "u32", fake):
             with patch.object(fill_module, "set_clipboard"):
@@ -52,6 +55,8 @@ class AutoSendTests(unittest.TestCase):
         overlay.set_status.assert_called_once_with("已取消", "warning")
 
     def test_send_presses_enter_only_when_wechat_is_foreground(self):
+        if sys.platform != "win32":
+            self.skipTest("Windows keyboard implementation")
         fake = _FakeUser32(foreground=123)
         with patch.object(fill_module, "u32", fake):
             with patch.object(fill_module, "_click_input") as click:
@@ -62,6 +67,8 @@ class AutoSendTests(unittest.TestCase):
         self.assertEqual(fake.keys, [(0x0D, 0), (0x0D, 2)])
 
     def test_send_refuses_when_another_window_is_foreground(self):
+        if sys.platform != "win32":
+            self.skipTest("Windows keyboard implementation")
         fake = _FakeUser32(foreground=999)
         with patch.object(fill_module, "u32", fake):
             with self.assertRaisesRegex(RuntimeError, "微信已不在前台"):

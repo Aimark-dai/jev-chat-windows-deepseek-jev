@@ -3,6 +3,7 @@
 一次 OCR 250~800ms，放父进程的 Qt 主线程界面就僵了。
 只往队列里丢纯 tuple/str（底色 bg 是 numpy，留在这边不过队列）。帧全程内存，绝不落盘。"""
 import ctypes
+import sys
 import time
 import traceback
 
@@ -20,7 +21,8 @@ def _err(q):
 def run(q, hwnd, enabled):
     """enabled 置位=采集，清掉=暂停。暂停时停掉 WGC 会话（Windows 那圈黄色采集边框也跟着没了），
     恢复时重开一个；readers 一直留着，去重状态不丢，恢复后不会把屏幕上的旧消息再报一遍。"""
-    ctypes.windll.user32.SetProcessDPIAware()
+    if sys.platform == "win32":
+        ctypes.windll.user32.SetProcessDPIAware()
     cap = None
     readers = {}  # {会话名: Reader}，一个会话一套去重状态
     title, head = "", None  # 当前会话名 / 上一帧的头部像素

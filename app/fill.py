@@ -2,21 +2,24 @@
 """微信输入操作：填入候选，以及用户明确开启后的倒计时发送。"""
 import ctypes
 import ctypes.wintypes as w
+import sys
 import time
 
-u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+u32, k32 = ((ctypes.windll.user32, ctypes.windll.kernel32)
+            if sys.platform == "win32" else (None, None))
 
 # 64 位下 ctypes.windll 默认 restype 是 32 位 c_int，而 GlobalAlloc 返回 64 位 HGLOBAL——
 # 不声明类型句柄会被截断成垃圾值，GlobalLock(垃圾) 返回 NULL，memmove(NULL,…) 就是
 # "access violation writing 0x0"。所有带句柄/指针的函数必须显式声明。
-k32.GlobalAlloc.restype = ctypes.c_void_p
-k32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
-k32.GlobalLock.restype = ctypes.c_void_p
-k32.GlobalLock.argtypes = [ctypes.c_void_p]
-k32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-k32.GlobalFree.argtypes = [ctypes.c_void_p]
-u32.SetClipboardData.restype = ctypes.c_void_p
-u32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+if sys.platform == "win32":
+    k32.GlobalAlloc.restype = ctypes.c_void_p
+    k32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    k32.GlobalLock.restype = ctypes.c_void_p
+    k32.GlobalLock.argtypes = [ctypes.c_void_p]
+    k32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    k32.GlobalFree.argtypes = [ctypes.c_void_p]
+    u32.SetClipboardData.restype = ctypes.c_void_p
+    u32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
 
 
 def set_clipboard(text):
@@ -107,3 +110,7 @@ def send(hwnd, area):
     time.sleep(0.05)
     u32.keybd_event(0x0D, 0, 0, 0)  # Enter 按下
     u32.keybd_event(0x0D, 0, 2, 0)  # Enter 抬起
+
+
+if sys.platform == "darwin":
+    from .fill_macos import fill, send, set_clipboard

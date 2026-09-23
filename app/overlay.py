@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """浅色置顶回复助手：回复建议和独立设置页。发送始终由用户在微信确认。"""
 from datetime import datetime
+import sys
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
@@ -8,7 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
-    BodyLabel, CardWidget, CheckBox, ComboBox, FluentIcon as FIF, HyperlinkButton,
+    BodyLabel, CardWidget, CheckBox, ComboBox, EditableComboBox, FluentIcon as FIF, HyperlinkButton,
     IndeterminateProgressBar, LineEdit, PasswordLineEdit, PlainTextEdit,
     PrimaryPushButton, PushButton, ScrollArea, SpinBox, SwitchButton, Theme, TransparentToolButton,
     setCustomStyleSheet, setFont, setTheme, setThemeColor,
@@ -26,6 +27,7 @@ _MUTED = "#68776f"
 _GREEN = "#18794e"
 _AMBER = "#996819"
 _RED = "#b44832"
+_AUTO_TARGET = "自动（最近发言人）"
 _PROJECT_URL = "https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev"
 _RELATIONSHIPS = [
     ("恋人", "romantic partners"), ("朋友", "friends"), ("同事", "colleagues"),
@@ -163,7 +165,7 @@ class Overlay:
         self.feeds = {}  # {会话名: [排好版的记录]}
         self.counts = {}  # {会话名: 消息条数}
         self.hers = {}  # {会话名: 对方最近一句}
-        self.targets = {}  # {会话名: ([发言人], 当前回复对象)}
+        self.targets = {}  # {会话名: ([OCR 发言人], 手动回复对象或 None)}
         self._chat = ""  # 微信当前开着的会话
         self._shown = ""  # 界面上正在看的会话（浏览时和上面不一样）
         self.win = _MainWindow(self._relayout)
@@ -338,11 +340,14 @@ class Overlay:
         target_prefix = _label("回复对象", 12, _MUTED)
         target_prefix.setFixedWidth(56)
         target_row.addWidget(target_prefix)
-        self.targetBox = ComboBox()
+        self.targetBox = EditableComboBox()
         self.targetBox.setMinimumWidth(0)  # 人名长度不定，别让它撑开整行
+        self.targetBox.setMaxLength(32)
         self.targetBox.setAccessibleName("回复对象")
-        self.targetBox.setToolTip("三条候选都按这个人来写；不选就跟着最近说话的那位")
-        self.targetBox.currentIndexChanged.connect(self._on_target_selected)
+        self.targetBox.setToolTip("可选择识别到的发言人，或输入正确昵称后按 Enter；手动指定会优先于识别结果")
+        self.targetBox.textEdited.connect(self._on_target_editing)
+        self.targetBox.textActivated.connect(self._on_target_selected)
+        self.targetBox.returnPressed.connect(lambda: self._on_target_selected(self.targetBox.currentText()))
         target_row.addWidget(self.targetBox, 1)
         self.atCheck = CheckBox("填入时带 @")
         self.atCheck.setChecked(True)
@@ -503,7 +508,7 @@ class Overlay:
         target_row.addWidget(self.targetSwitch)
         box.addLayout(target_row)
         box.addWidget(self._hint(
-            "开了以后群聊里可以选回复给谁，候选会针对 TA 写，填入时可带 @。关了就正常回复。"
+            "开了以后可选择或输入回复对象昵称，按 Enter 生效；候选会针对 TA 写，填入时可带 @。"
         ))
         update_row = QHBoxLayout()
         update_row.addWidget(_label("启动时检查更新", 13), 1)
@@ -558,7 +563,7 @@ class Overlay:
         self.typesafeKeyEdit.returnPressed.connect(self._save)
         box.addWidget(self.typesafeKeyEdit)
         box.addWidget(self._hint(
-            "在 console.typesafe.ai 获取。密钥只保存到 Windows 当前用户环境变量。"
+            "在 console.typesafe.ai 获取。密钥保存在本机用户密钥存储中。"
         ))
         think_row = QHBoxLayout()
         think_row.addWidget(_label("起草时开启思考模式", 13), 1)
@@ -670,6 +675,10 @@ class Overlay:
         self.autoSendSwitch.blockSignals(False)
 
     def _auto_send_toggled(self, on):
+        if on and sys.platform == "darwin":
+            self._update_footer()
+            self.set_status("Mac 预览版尚未完成微信实机发送验收，暂不支持自动发送。", "error")
+            return
         try:
             settings.set_auto_send(on)
         except Exception:
@@ -959,27 +968,41 @@ class Overlay:
             self._render_targets()
 
     def _render_targets(self):
-        """开关关着、或这个会话没有发言人（单聊），这一行就不出现。
-        重填下拉框时屏蔽信号，别把自己的填充当成用户挑的。"""
+        """开启功能后始终可手动输入；OCR 没认出姓名时也能指定回复对象。"""
         senders, current = self.targets.get(self._shown, ([], None))
-        visible = bool(senders) and settings.reply_target()
+        visible = settings.reply_target()
         self.targetRow.setVisible(visible)
         if not visible:
             return
         self.targetBox.blockSignals(True)
         self.targetBox.clear()
-        self.targetBox.addItems(senders)
-        self.targetBox.setCurrentIndex(senders.index(current) if current in senders else 0)
+        names = [_AUTO_TARGET] + [name for name in senders if name != _AUTO_TARGET]
+        if current and current not in names:
+            names.append(current)
+        self.targetBox.addItems(names)
+        self.targetBox.setCurrentText(current or _AUTO_TARGET)
         self.targetBox.blockSignals(False)
 
-    def _on_target_selected(self, index):
-        """用户挑了回复对象。浏览别的会话时改的就是那个会话的对象——记录、候选也都按会话走，口径一致。"""
-        name = self.targetBox.itemText(index)
+    def _on_target_editing(self, _text):
+        self.invalidate_replies()
+        self.set_status("回复对象已修改，按 Enter 确认后重新生成。", "warning")
+
+    def _on_target_selected(self, name):
+        """用户挑选或输入名字后确认；自动模式则恢复跟随最近发言人。"""
+        name = str(name).strip()
         if not name:
+            return
+        if name == _AUTO_TARGET:
+            name = None
+        else:
+            name = name.lstrip("@＠").strip()
+        if name == "":
+            return
+        if name == self.targets.get(self._shown, ([], None))[1] and self._current:
             return
         senders, _ = self.targets.get(self._shown, ([], None))
         self.targets[self._shown] = (senders, name)
-        self.set_status(f"按「{name}」重新生成…", "busy")
+        self.set_status(f"按「{name}」重新生成…" if name else "按最近发言人重新生成…", "busy")
         if self.on_target_change:
             self.on_target_change(self._shown, name)
 

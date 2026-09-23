@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-23 (Preview)
+
+### Added
+
+- 新增 Apple Silicon macOS 预览构建与本地微信窗口采集、手动填入适配；Mac 自动发送保持禁用，真实微信全流程仍待实机验收。
+- 发布流水线分别在 Windows 和 macOS runner 构建，通过自动测试与 Mac 启动检查后才发布双平台包。
+
+### Fixed
+
+- 修复 Windows 打包时混入第三方 ICU DLL 导致 QtCore 启动失败。
+- 群聊可明确指定回复对象；TypeSafe 返回 403 / Cloudflare 1010 时提示访问被拒并停止重复请求。
+
+### Documentation
+
+- 项目介绍明确 Windows 正式版与 Mac 未签名、未公证预览版的区别和使用边界。
+
 ## [1.0.3] - 2026-09-22
 
 ### Changed

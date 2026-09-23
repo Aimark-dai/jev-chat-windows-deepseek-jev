@@ -2,11 +2,12 @@
 """找微信窗口 + Windows Graphics Capture 盯着它 + 从帧里定位消息区。帧全程内存，绝不落盘。"""
 import ctypes
 import os
+import sys
 import time
 
 import numpy as np
 
-u32 = ctypes.windll.user32
+u32 = ctypes.windll.user32 if sys.platform == "win32" else None
 
 
 def find_wechat_hwnd():
@@ -138,3 +139,7 @@ class Capture:
 
     def wait(self):
         self.ctl.wait()  # 采集线程若是报错死的，这里把错误抛出来
+
+
+if sys.platform == "darwin":
+    from .capture_macos import Capture, find_wechat_hwnd, unminimize

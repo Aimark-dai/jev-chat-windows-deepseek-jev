@@ -9,6 +9,7 @@ DeepSeek 官方 key 在独立设置页填写，不用改代码。IDE 里直接 R
 import ctypes
 import multiprocessing
 import queue
+import sys
 import threading
 import traceback
 from collections import deque
@@ -19,15 +20,20 @@ from app.fill import fill, send as send_reply
 from app.overlay import Overlay
 from app.version import VERSION
 from core.engine import analyze
+from core.typesafe_client import TypeSafeAccessDenied
 
 # {会话名: {history, result, rev, target, senders}}：每个会话各自的上下文、上次结果和版本号，互不串味
 # history 里是 [(who, text, name)]，engine 只认 her/me，name 是群里的发言人（单聊/自己说的是 None）；
 # 只是缓冲区，实际喂模型几条由设置里的「参考上下文」决定
-# senders：这个群里发过言的人，去重、最近的排最前；target：用户挑的回复对象（None = 跟着最近那个走）
+# senders：这个群里发过言的人，去重、最近的排最前；target：用户指定的回复对象（None = 跟着最近那个走）
 chats = {}
-state = {"area": None, "busy": False, "rerun": None, "hwnd": None, "chat": ""}
+state = {"area": None, "busy": False, "rerun": None, "hwnd": None, "chat": "",
+         "typesafe_blocked": False}
 results = queue.Queue()
 update_result = queue.Queue()  # 独立小队列，别跟 results 的 (kind, r, title, revision) 形状搅在一起
+TYPESAFE_BLOCKED_STATUS = (
+    "TypeSafe 拒绝访问（403），JEV 已暂停；请联系 TypeSafe，或在设置中关闭 JEV。"
+)
 
 
 def chat_of(title):
@@ -36,9 +42,9 @@ def chat_of(title):
 
 
 def target_of(title):
-    """这个会话现在的回复对象：用户挑过且人还在就用它，否则用最近说话的那个；单聊没有发言人 → None。"""
+    """手动指定优先；否则跟随 OCR 识别到的最近发言人。"""
     chat = chat_of(title)
-    if chat["target"] in chat["senders"]:
+    if chat["target"]:
         return chat["target"]
     return chat["senders"][0] if chat["senders"] else None
 
@@ -102,6 +108,8 @@ def analyze_bg(msgs, title, revision, reply_to=None):
                                    style=settings.style(), thinking=settings.thinking(),
                                    judge_provider=settings.judge_provider()),
                      title, revision))
+    except TypeSafeAccessDenied as e:
+        results.put(("blocked", f"分析失败: {e}", title, revision))
     except Exception as e:
         results.put(("err", f"分析失败: {e}", title, revision))
 
@@ -114,6 +122,11 @@ def check_update_bg():
 
 
 def start_analyze(title, msgs):
+    if state["typesafe_blocked"] and settings.judge_provider() == "typesafe":
+        state["busy"] = False
+        ov.set_busy(False)
+        ov.set_status(TYPESAFE_BLOCKED_STATUS, "error")
+        return
     if not settings.has_key():
         ov.set_status("请先在设置中填写 DeepSeek 官方 API 密钥", "warning")
         return
@@ -128,11 +141,13 @@ def start_analyze(title, msgs):
 
 
 def on_target_change(title, name):
-    """用户挑了回复对象：记下来，这个会话里有对方的话就照新对象重跑一次。"""
+    """用户选中或输入回复对象：即使 OCR 没识别出这个名字也照此重跑。"""
     chat = chat_of(title)
-    chat["target"] = name
+    target = str(name or "").replace("\r", " ").replace("\n", " ").strip()
+    chat["target"] = target.lstrip("@＠").strip()[:32] or None
     msgs = list(chat["history"])
     if not any(m[0] == "her" for m in msgs):
+        ov.set_status("已指定回复对象，等待新消息", "idle")
         return
     if state["busy"]:
         state["rerun"] = (title, msgs)
@@ -194,7 +209,7 @@ def drain():
                 if name in chat["senders"]:
                     chat["senders"].remove(name)
                 chat["senders"].insert(0, name)
-        ov.set_targets(title, chat["senders"], target_of(title))  # 显不显示这一行由悬浮窗按开关决定
+        ov.set_targets(title, chat["senders"], chat["target"])
         if new[-1][0] == "her":  # 只有对方最新说话才值得分析
             msgs = list(chat["history"])
             if state["busy"]:
@@ -217,6 +232,16 @@ def tick():
         while not results.empty():
             kind, r, title, revision = results.get()
             state["busy"] = False
+            if kind == "blocked":
+                state["typesafe_blocked"] = True
+                state["rerun"] = None
+                chat_of(title)["result"] = None
+                ov.set_busy(False)
+                if title == ov.current_chat():
+                    ov.show_cached(None)
+                ov.set_status(TYPESAFE_BLOCKED_STATUS, "error")
+                ov.log(r)
+                continue
             if state["rerun"]:  # 分析期间又来了新消息，接着跑最新的
                 (t, msgs), state["rerun"] = state["rerun"], None
                 start_analyze(t, msgs)
@@ -237,9 +262,12 @@ def tick():
                 else:
                     ov.set_busy(False)
             else:
+                chat_of(title)["result"] = None
                 ov.set_busy(False)
-                ov.set_status("生成失败，请检查网络和服务设置；新消息到来后会重试。", "error")
-                ov.log(r)
+                if title == ov.current_chat():
+                    ov.show_cached(None)
+                    ov.set_status("生成失败，请检查网络和服务设置；新消息到来后会重试。", "error")
+                    ov.log(r)
     except Exception:
         traceback.print_exc()  # 一帧出错不退出
     ov.after(50, tick)
@@ -247,7 +275,8 @@ def tick():
 
 if __name__ == "__main__":  # Windows 的 spawn 会让子进程重新执行本文件，没这行就无限套娃开进程
     multiprocessing.freeze_support()  # 打包成 exe 后 spawn 出来的子进程会重跑一遍 exe，没这行就无限弹界面
-    ctypes.windll.user32.SetProcessDPIAware()
+    if sys.platform == "win32":
+        ctypes.windll.user32.SetProcessDPIAware()
     q = multiprocessing.Queue()
     capture_on = multiprocessing.Event()  # 父子进程共用的开关，置位=采集
     ov = Overlay(on_fill=fill_reply, on_toggle_capture=on_toggle_capture,

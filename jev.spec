@@ -1,25 +1,31 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller 打包定义，CI（.github/workflows/release.yml）和 build.bat 共用这一份。
 onedir 不是 onefile：PySide6 + onnxruntime 打出来 ~150MB，onefile 每次启动都要解压一遍，慢且占临时盘。
-只在 Windows 上跑，下面的 collect_all 也只认 Windows 上装好的那几个包。"""
+Windows 产出 onedir，macOS 产出 .app；两者都必须在各自平台打包。"""
 from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
+import os
+import sys
 
-NAME = "jev-chat-windows"
+IS_MAC = sys.platform == "darwin"
+NAME = "jev-chat-macos" if IS_MAC else "jev-chat-windows"
 
 hiddenimports = [
     # spawn 出来的采集子进程按名字 import app.worker，再顺着它拉 capture/ocr；
     # 父进程这边 engine 也是运行时才走到，一并钉死，别指望静态分析都能扫出来
-    "app.worker", "app.capture", "app.ocr", "app.fill", "app.overlay", "app.settings",
+    "app.worker", "app.capture", "app.capture_macos", "app.ocr", "app.fill",
+    "app.fill_macos", "app.overlay", "app.settings",
     "app.version", "app.update",
     "core.engine", "core.draft", "core.jev_client", "core.typesafe_client", "core.questions",
 ]
 datas, binaries = [], []
-for pkg in (
+packages = [
     "rapidocr_onnxruntime",  # .onnx 模型 + config.yaml 是包数据，不收就是启动即炸
     "onnxruntime",           # capi 下面那堆 DLL
     "qfluentwidgets",        # qss / 图标资源
-    "windows_capture",       # Rust 编译的 .pyd
-):
+]
+packages.append("keyring" if IS_MAC else "windows_capture")
+for pkg in packages:
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
@@ -51,6 +57,18 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
+
+# Windows 的 Qt6Core 使用系统 ICU 的未加版本后缀的导出。构建机 PATH 中可能有
+# Poppler 等工具自带的 icuuc.dll（导出带 _78 后缀）；PyInstaller 误收后启动即报
+# “DLL load failed while importing QtCore”。只排除非 PySide6 自带的 ICU DLL。
+def _foreign_icu(binary):
+    destination, source, _ = binary
+    name = Path(destination).name.lower()
+    return (name.startswith(("icuuc", "icudt", "icuin")) and name.endswith(".dll")
+            and "pyside6" not in {part.lower() for part in Path(source).parts})
+
+
+a.binaries = [binary for binary in a.binaries if not _foreign_icu(binary)]
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -69,7 +87,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="docs/icon.ico",
+    icon=None if IS_MAC else "docs/icon.ico",
 )
 
 coll = COLLECT(
@@ -81,3 +99,16 @@ coll = COLLECT(
     upx_exclude=[],
     name=NAME,
 )
+
+if IS_MAC:
+    app = BUNDLE(
+        coll,
+        name="JevChat.app",
+        icon=None,
+        bundle_identifier="com.aimarkdai.jevchat",
+        version=os.environ.get("JEV_BUILD_VERSION", "0.0.0"),
+        info_plist={
+            "NSPrincipalClass": "NSApplication",
+            "NSAppleEventsUsageDescription": "用于在你点击填入时将回复写入微信。",
+        },
+    )

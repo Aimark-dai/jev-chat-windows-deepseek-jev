@@ -16,6 +16,7 @@ python -m pip install -r requirements.txt pyinstaller || goto :fail
 
 echo Building ...
 pyinstaller --noconfirm --clean jev.spec || goto :fail
+python tools\check_bundle_qt.py dist\jev-chat-windows || goto :fail
 
 echo.
 echo Build OK.

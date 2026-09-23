@@ -11,8 +11,12 @@ import json
 import os
 import sys  # 只为下面这一处：打包后 __file__ 指向临时解包目录，config.json 得放在 exe 旁边才存得住
 
-_ROOT = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
-         else os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if sys.platform == "darwin":
+    _ROOT = os.path.join(os.path.expanduser("~/Library/Application Support"), "JevChat")
+    os.makedirs(_ROOT, exist_ok=True)
+else:
+    _ROOT = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+             else os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _CONFIG = os.path.join(_ROOT, "config.json")
 _DEFAULT_RELATIONSHIP = "romantic partners"
 _DEFAULT_CONTEXT = 10
@@ -75,6 +79,8 @@ def reply_target() -> bool:
 
 def auto_send() -> bool:
     """是否在倒计时后自动发送推荐回复。高风险动作，缺省必须关闭。"""
+    if sys.platform == "darwin":
+        return False  # Mac 试用版未做真实微信发送验收，禁止自动发送。
     try:
         with open(_CONFIG, encoding="utf-8") as f:
             return json.load(f).get("auto_send") is True
@@ -100,6 +106,16 @@ def check_update() -> bool:
 def _get_key(env_name: str) -> str:
     """进程环境优先；没有就读注册表并带进进程环境，之后 core/ 里按 os.environ 读就有了。"""
     v = os.environ.get(env_name, "").strip()
+    if sys.platform == "darwin" and not v:
+        try:
+            import keyring
+
+            v = (keyring.get_password("com.aimarkdai.jevchat", env_name) or "").strip()
+        except Exception:
+            v = ""
+        if v:
+            os.environ[env_name] = v
+        return v
     if not v:
         try:
             import winreg
@@ -114,6 +130,12 @@ def _get_key(env_name: str) -> str:
 
 def _set_key(env_name: str, value: str) -> None:
     """只写进程环境 + HKCU\\Environment，不写任何文件。"""
+    if sys.platform == "darwin":
+        import keyring
+
+        keyring.set_password("com.aimarkdai.jevchat", env_name, value)
+        os.environ[env_name] = value
+        return
     os.environ[env_name] = value
     try:
         import winreg
@@ -164,7 +186,7 @@ def save(key_text: str | None, relationship_text: str, context_n: int | None = N
     style_v = style() if style_text is None else str(style_text).strip()  # 空串 = 清掉
     think = thinking() if thinking_on is None else bool(thinking_on)
     check = check_update() if check_update_on is None else bool(check_update_on)
-    auto = auto_send() if auto_send_on is None else bool(auto_send_on)
+    auto = False if sys.platform == "darwin" else (auto_send() if auto_send_on is None else bool(auto_send_on))
     with open(_CONFIG, "w", encoding="utf-8") as f:
         json.dump({"relationship": relationship_text, "context": n, "draft_provider": provider,
                    "judge_provider": judge,
@@ -173,4 +195,6 @@ def save(key_text: str | None, relationship_text: str, context_n: int | None = N
 
 def set_auto_send(enabled: bool) -> None:
     """主界面快捷开关：只更新自动发送，其他设置按当前值保留。"""
+    if sys.platform == "darwin" and enabled:
+        raise RuntimeError("Mac 试用版暂不支持自动发送。")
     save(None, relationship(), auto_send_on=bool(enabled))
