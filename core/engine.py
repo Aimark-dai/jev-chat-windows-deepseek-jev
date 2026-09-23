@@ -53,7 +53,7 @@ def analyze(messages: list, relationship: str, model: str | None = None,
     provider: 起草固定为 deepseek。
     judge_provider: deepseek 或 typesafe；后者直连 TypeSafe 官方 JEV。
     reply_to: 群聊里指定回复给谁；None = 正常回复。
-    style: 用户自己描述的说话风格，只影响起草。
+    style: 用户选择或自定义的说话风格；用于起草和判断候选语气，不改变事实或风险判断。
     thinking: 起草时是否开思考模式，只影响起草，默认关。
     model=None 用该来源的默认模型。
 
@@ -61,7 +61,7 @@ def analyze(messages: list, relationship: str, model: str | None = None,
     scores 是每条候选的胜出概率（0~1），取自 best_reply.probabilities，取不到记 0.0。
     只有对方最新说话时才有意义调它——是不是该触发由调用方判断（看 latest_from）。
     """
-    state = build_state(messages, relationship, keep=context, reply_to=reply_to)
+    state = build_state(messages, relationship, keep=context, reply_to=reply_to, style=style)
     regenerated = False
     quality_passed = True
 

@@ -72,11 +72,15 @@ class TypeSafeClientTests(unittest.TestCase):
         }
         with patch.dict(os.environ, {"TYPESAFE_API_KEY": "typesafe-test-key"}, clear=False):
             with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-                result = typesafe_client.ask({"messages": []}, questions, timeout=7)
+                result = typesafe_client.ask(
+                    {"chat": {"messages": [], "reply_style": "简短直接：先回应问题。"}},
+                    questions, timeout=7,
+                )
 
         self.assertEqual(captured["url"], "https://api.typesafe.ai/v1/systemone")
         self.assertEqual(captured["body"]["model"], "jev-latest")
-        self.assertEqual(captured["body"]["state"], {"messages": []})
+        self.assertEqual(captured["body"]["state"]["chat"]["reply_style"],
+                         "简短直接：先回应问题。")
         self.assertEqual(captured["auth"], "Bearer typesafe-test-key")
         self.assertEqual(captured["timeout"], 7)
         self.assertEqual(result["answers"]["best_reply"]["choice"], "reply_b")

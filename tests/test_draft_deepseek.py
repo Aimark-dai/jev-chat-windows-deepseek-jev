@@ -5,6 +5,14 @@ from core import draft
 
 
 class DeepSeekDraftTests(unittest.TestCase):
+    def test_selected_style_is_sent_to_deepseek_draft(self):
+        style = "专业商务：礼貌、清楚地回应事实和下一步；未核实的事不承诺。"
+        with patch.object(draft, "_api_key", return_value="test-key"), \
+             patch.object(draft, "_chat", return_value='["请提供规格，我核实后回复。"]') as chat:
+            draft.draft_candidates([("her", "这款多少钱？")], "客户", style=style)
+        self.assertIn(style, chat.call_args.args[2]["messages"][1]["content"])
+        self.assertIn("用户当前选择", chat.call_args.args[2]["messages"][0]["content"])
+
     def test_unread_quote_drops_fabricated_past_actions_without_extra_call(self):
         messages = [("her", "这个\n[引用：成员乙的消息，内容未完整识别]", "X")]
         replies = '["我这边也没查到确切说法", "我印象里以前不算", "得核对官方额度说明"]'

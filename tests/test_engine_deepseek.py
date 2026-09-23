@@ -5,6 +5,26 @@ from core import engine
 
 
 class DeepSeekEngineTests(unittest.TestCase):
+    def test_selected_style_reaches_draft_and_deepseek_judge(self):
+        with patch.object(engine, "draft_candidates", return_value=["收到，我先核实后回复您。"]) as draft, \
+             patch.object(engine, "deepseek_ask", return_value={"answers": {}}) as ask:
+            engine.analyze([("her", "请问价格？")], "客户", style="专业商务：先核实再回复。")
+        self.assertEqual(draft.call_args.kwargs["style"], "专业商务：先核实再回复。")
+        self.assertEqual(ask.call_args.args[0]["chat"]["reply_style"], "专业商务：先核实再回复。")
+
+    def test_selected_style_reaches_typesafe_pre_review_and_rewrite(self):
+        reject = {"answers": {"candidate_quality": {"choice": "regenerate"}}}
+        accept = {"answers": {"candidate_quality": {"choice": "pass"}}}
+        with patch.object(engine, "draft_candidates", side_effect=[["初稿"], ["重写稿"]]) as draft, \
+             patch.object(engine, "typesafe_ask", side_effect=[{"answers": {}}, reject, accept]) as ask:
+            engine.analyze([("her", "请问价格？")], "客户", judge_provider="typesafe",
+                           style="专业商务：先核实再回复。")
+        self.assertEqual([call.kwargs["style"] for call in draft.call_args_list],
+                         ["专业商务：先核实再回复。"] * 2)
+        self.assertEqual([call.args[0]["chat"]["reply_style"] for call in ask.call_args_list],
+                         ["专业商务：先核实再回复。"] * 3)
+        self.assertIn("chat.reply_style", ask.call_args_list[1].args[1]["candidate_quality"]["instructions"])
+
     def test_jev_review_checks_unread_quote_is_not_confirmed_change(self):
         reject = {"answers": {"candidate_quality": {"choice": "regenerate"}}}
         accept = {"answers": {"candidate_quality": {"choice": "pass"}}}

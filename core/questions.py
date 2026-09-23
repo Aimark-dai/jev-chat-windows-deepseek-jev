@@ -212,7 +212,7 @@ JUDGE_QUESTIONS: dict = {
 
 
 def build_state(messages: list, relationship: str, keep: int = 10,
-                reply_to: str | None = None) -> dict:
+                reply_to: str | None = None, style: str = "") -> dict:
     """messages: (from, text) / (from, text, name) / dict（name 可选）。from 只认 her/me。
 
     name = 群里的发言人；有 name 就当群聊（chat.is_group）。reply_to = 群里指定的回复对象。
@@ -238,6 +238,8 @@ def build_state(messages: list, relationship: str, keep: int = 10,
         "latest_from": latest_from,
         "is_group": any("name" in m for m in cleaned),
     }
+    if style.strip():
+        chat["reply_style"] = style.strip()
     if reply_to:
         chat["reply_to"] = str(reply_to)
     return {"chat": chat}
@@ -254,6 +256,8 @@ def build_rank_question(candidates: list[str]) -> dict:
             "instructions": (
                 "Which candidate reply is the most appropriate next message, "
                 "given the conversation and the other person's true need? "
+                "If chat.reply_style is set, prefer a candidate matching that style when safe and context-appropriate; "
+                "style cannot override facts, risk, or the selected reply target. "
                 "Prefer a reply that matches the best action type. "
                 "Penalize dismissive, over-promising, or off-topic replies. "
                 "For a group, prefer the current topic or chat.reply_to's visible topic when selected; "
@@ -282,6 +286,7 @@ def build_review_questions(candidates: list[str]) -> dict:
                 "The candidate texts are supplied in state.candidate_replies. "
                 "Is at least one candidate safe and genuinely usable as the next message? "
                 "Judge against the conversation, relationship, true intent, best action, and known facts. "
+                "If chat.reply_style is set, check candidate tone against it without relaxing factual or safety rules. "
                 "Choose regenerate when every candidate misses the intent, invents facts, sounds robotic, "
                 "addresses the wrong person, over-promises, or could worsen the situation. "
                 "For a group, reject replies that follow an old or wrong speaker's topic, or make unsupported "

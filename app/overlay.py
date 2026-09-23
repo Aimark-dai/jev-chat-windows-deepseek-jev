@@ -33,6 +33,15 @@ _RELATIONSHIPS = [
     ("恋人", "romantic partners"), ("朋友", "friends"), ("同事", "colleagues"),
     ("家人", "family"), ("自定义", None),
 ]
+_STYLES = [
+    ("不指定（跟随聊天）", ""),
+    ("简短直接", "简短直接：先回应问题，少寒暄，不写长段。"),
+    ("自然随和", "自然随和：用日常口语聊天，避免套话和书面腔。"),
+    ("专业商务", "专业商务：礼貌、清楚地回应事实和下一步；未核实的事不承诺。"),
+    ("温和共情", "温和共情：简短承接对方情绪，再回应具体问题，不夸张安慰。"),
+    ("轻松幽默", "轻松幽默：可以适度开玩笑；严肃、敏感或高风险话题保持正经。"),
+    ("自定义", None),
+]
 
 
 def _label(text="", size=14, color=None, bold=False, parent=None):
@@ -480,15 +489,23 @@ class Overlay:
         box.addWidget(self._hint("帮助助手把握称呼、语气和回应分寸。"))
         style_label = _label("说话风格（可选）", 13)
         box.addWidget(style_label)
+        self.styleBox = ComboBox()
+        self.styleBox.setMinimumWidth(0)
+        self.styleBox.addItems([name for name, _ in _STYLES])
+        self.styleBox.setAccessibleName("说话风格预设")
+        style_label.setBuddy(self.styleBox)
+        box.addWidget(self.styleBox)
         self.styleEdit = LineEdit()
         self.styleEdit.setPlaceholderText("例如：话少、不用标点、偶尔用 doge、不说客套话")
-        self.styleEdit.setAccessibleName("说话风格")
-        style_label.setBuddy(self.styleEdit)
+        self.styleEdit.setAccessibleName("自定义说话风格")
         box.addWidget(self.styleEdit)
+        self.styleBox.currentIndexChanged.connect(
+            lambda index: self.styleEdit.setVisible(_STYLES[index][1] is None)
+        )
         box.addWidget(self._hint(
-            "同一会话中识别到你自己最近 6–12 条有效短消息后，可选地模仿用词、句长和标点；"
-            "这与下方用于理解群聊话题的参考上下文分开。只是本次运行的口吻样本，不会训练模型，"
-            "重启后重新收集。这里还可以补一句固定口吻。"
+            "选中的风格会交给 DeepSeek 起草，并供 DeepSeek 或 TypeSafe 判断、复审候选的语气；"
+            "不会增加调用次数。你自己最近 6–12 条有效短消息仍只作为可选口吻样本，"
+            "与下方用于理解话题的参考上下文分开。"
         ))
         context_label = _label("参考上下文", 13)
         box.addWidget(context_label)
@@ -611,7 +628,12 @@ class Overlay:
         self.relationshipBox.setCurrentIndex(index)
         self.relEdit.setText(relationship if _RELATIONSHIPS[index][1] is None else "")
         self.relEdit.setVisible(_RELATIONSHIPS[index][1] is None)
-        self.styleEdit.setText(settings.style())
+        saved_style = settings.style()
+        style_index = next((i for i, (_, value) in enumerate(_STYLES) if value == saved_style),
+                           len(_STYLES) - 1)
+        self.styleBox.setCurrentIndex(style_index)
+        self.styleEdit.setText(saved_style if _STYLES[style_index][1] is None else "")
+        self.styleEdit.setVisible(_STYLES[style_index][1] is None)
         self.contextBox.setValue(settings.context())
         self.targetSwitch.setChecked(settings.reply_target())
         self.keyEdit.clear()
@@ -635,6 +657,8 @@ class Overlay:
     def _save(self):
         relationship = _RELATIONSHIPS[self.relationshipBox.currentIndex()][1]
         relationship = relationship or self.relEdit.text().strip()
+        style = _STYLES[self.styleBox.currentIndex()][1]
+        style = self.styleEdit.text().strip() if style is None else style
         key = self.keyEdit.text().strip()
         typesafe_key = self.typesafeKeyEdit.text().strip()
         if not relationship:
@@ -653,7 +677,7 @@ class Overlay:
             settings.save(key or None, relationship, self.contextBox.value(),
                           None, "deepseek",
                           reply_target_on=self.targetSwitch.isChecked(),
-                          style_text=self.styleEdit.text().strip(),
+                          style_text=style,
                           thinking_on=self.thinkingSwitch.isChecked(),
                           check_update_on=self.updateSwitch.isChecked(),
                           typesafe_key_text=typesafe_key or None,

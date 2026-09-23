@@ -22,7 +22,7 @@ TypeSafe 没有负责写回复。它输出结构化判断和概率；真正的�
 
 ## 下载与启动
 
-Windows 稳定版前往 [最新正式版](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/latest) 下载 `jev-chat-windows-vX.Y.Z.zip`。需要体验当前功能的 Windows 与 macOS Apple Silicon 用户可前往 [v1.0.5 预览发布页](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/tag/v1.0.5) 下载对应平台的 ZIP；Intel Mac 暂无包。
+Windows 稳定版前往 [最新正式版](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/latest) 下载 `jev-chat-windows-vX.Y.Z.zip`。需要体验当前功能的 Windows 与 macOS Apple Silicon 用户可前往 [v1.1.0 预览发布页](https://github.com/Aimark-dai/jev-chat-windows-deepseek-jev/releases/tag/v1.1.0) 下载对应平台的 ZIP；Intel Mac 暂无包。
 
 1. Windows 完整解压 ZIP，运行其中的 `jev-chat-windows.exe`，不能只单独拿出 EXE。Mac 解压后把 `JevChat.app` 拖到“应用程序”，从 Finder 打开。
 2. Mac 首次运行需要在系统设置中允许“屏幕录制”和“辅助功能”；授权后重新打开应用。预览包尚未签名和公证，macOS 可能要求在系统设置的“隐私与安全性”中确认打开；不要全局关闭 Gatekeeper。
@@ -44,7 +44,7 @@ Windows 稳定版前往 [最新正式版](https://github.com/Aimark-dai/jev-chat
 
 Mac 微信实机效果仍需单独验收。
 
-**v1.0.5 预览版已知问题：**Windows“填入微信”在窗口或侧栏布局刚变化时，可能误点到其他会话；此问题尚未修复。请保持微信窗口布局稳定，使用前确认当前群名，并保持“3秒自动发送”关闭。若无法确认填入目标，使用“复制”后手动粘贴更安全。
+**v1.1.0 预览版已知问题：**Windows“填入微信”在窗口或侧栏布局刚变化时，可能误点到其他会话；此问题尚未修复。请保持微信窗口布局稳定，使用前确认当前群名，并保持“3秒自动发送”关闭。若无法确认填入目标，使用“复制”后手动粘贴更安全。
 
 Windows 版如果在主界面打开“3秒自动发送”，软件会先把推荐候选填入微信输入框，再显示倒计时。倒计时期间切换会话、收到新消息、关闭开关或微信失去前台状态，都会取消发送。JEV 复审没有通过时也不会自动发送。Mac 预览版强制关闭自动发送。
 
@@ -88,7 +88,7 @@ Windows Graphics Capture / macOS CoreGraphics 读取当前微信窗口
 - JEV 对生成结果进行质量门禁，并用选择概率给候选排序。
 - 候选支持复制或填入微信；填入不等于发送。
 - Windows 3 秒自动发送默认关闭，并有会话、前台状态和复审结果门禁；Mac 预览版不可开启。
-- 支持暂停采集、调整上下文数量、自定义关系和说话风格；同一会话中收集到你自己最近 6–12 条有效短消息后，会把这些消息作为口吻样本交给 DeepSeek。
+- 支持暂停采集、调整上下文数量，以及选择或自定义关系和说话风格；选中的风格用于 DeepSeek 起草和 DeepSeek/TypeSafe 判断候选语气，不增加模型调用次数。你自己最近 6–12 条有效短消息仍只作为可选口吻样本。
 - 启动时可检查 GitHub 新版本，点击提示前往 Release 页面下载。
 
 ## 设置与密钥
@@ -98,7 +98,7 @@ Windows Graphics Capture / macOS CoreGraphics 读取当前微信窗口
 | DeepSeek API Key | 生成候选；关闭 TypeSafe 时也负责基础判断 | Windows 用户环境变量；Mac 钥匙串 |
 | TypeSafe API Key | JEV 预判、复审和排序 | Windows 用户环境变量；Mac 钥匙串 |
 | TypeSafe JEV 全链路优化 | 在生成前后调用 JEV | `config.json` |
-| 关系与说话风格 | 控制称呼、语气和分寸 | `config.json` |
+| 关系与说话风格 | 关系控制称呼和分寸；风格可选预设或自定义，供生成与语气复审使用 | `config.json` |
 | 参考上下文 | 每次处理最近 3–30 条消息 | `config.json` |
 | 群聊回复对象 | 让候选针对指定成员生成 | `config.json` |
 | 3 秒自动发送 | Windows 明确开启后才允许倒计时发送；Mac 预览版禁用 | `config.json`，默认关闭 |
@@ -112,7 +112,7 @@ Windows 的 `config.json` 位于程序目录；Mac 位于 `~/Library/Application
 - 仅用于读取你自己设备上、你有权查看的聊天内容。
 - 采集方式是微信窗口截图与本地 OCR；不注入微信、不解密数据库、不读取进程内存。
 - 截图帧在内存中处理，不作为聊天图片保存。
-- 调用 DeepSeek 或 TypeSafe 时，会发送你设置数量内的最近聊天、关系信息和必要的群聊回复对象；说话风格仅交给 DeepSeek。
+- 调用 DeepSeek 或 TypeSafe 时，会发送你设置数量内的最近聊天、关系信息、所选说话风格和必要的群聊回复对象；风格只用于语气判断，不能覆盖事实和安全规则。
 - 打开版本检查时只查询本仓库 GitHub Release，不附带聊天内容。
 - 自动发送默认关闭，Mac 预览版强制禁用；涉及转账、红包、收款的内容被起草规则明确禁止。
 - AI 判断和候选都可能出错，发送前应当人工确认。
