@@ -65,11 +65,12 @@ def _frame(window_id: int) -> np.ndarray:
     stride = quartz.CGImageGetBytesPerRow(image)
     if width < 400 or height < 300 or stride < width * 4:
         raise RuntimeError("微信截图尺寸或像素格式无效。")
-    raw = bytes(quartz.CGDataProviderCopyData(quartz.CGImageGetDataProvider(image)))
-    if len(raw) < stride * height:
+    # bytes(CFData) leaks the whole frame under pyobjc 12 (~13MB per call); read the buffer directly.
+    raw = np.frombuffer(quartz.CGDataProviderCopyData(quartz.CGImageGetDataProvider(image)), dtype=np.uint8)
+    if raw.size < stride * height:
         raise RuntimeError("微信截图数据不完整。")
     # CoreGraphics' 32-bit little-endian premultiplied-alpha window images are BGRA.
-    pixels = np.frombuffer(raw, dtype=np.uint8, count=stride * height).reshape(height, stride)
+    pixels = raw[:stride * height].reshape(height, stride)
     return np.ascontiguousarray(pixels[:, :width * 4].reshape(height, width, 4)[:, :, 2::-1])
 
 
